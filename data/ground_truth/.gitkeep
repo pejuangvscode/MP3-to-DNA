@@ -1,0 +1,3 @@
+# Reference notation: MIDI exported from the same FL Studio projects as the
+# audio in data/audio, so the reference is exact by construction (Subbab 3.2.5).
+# The MIDI files themselves are not tracked in git.

@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Test corpus and generated artefacts — large binaries, kept out of git.
+# Track the corpus manifest instead (data/corpus.csv).
+data/audio/*.mp3
+data/ground_truth/*.mid
+data/ground_truth/*.midi
+results/
+
+# Tooling
+.pytest_cache/
+.ipynb_checkpoints/
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
