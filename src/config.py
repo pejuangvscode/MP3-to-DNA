@@ -33,7 +33,32 @@ TARGET_CHANNELS = 1
 # basic-pitch inference parameters (Tabel 2.5, Subbab 3.3.2)
 # ---------------------------------------------------------------------------
 
-ONSET_THRESHOLD = 0.5
+#: PROVISIONAL, raised from the library default of 0.5. Calibrated on a single
+#: sample, which is not enough to justify it.
+#:
+#: At 0.5 the model was too generous on sample a1: precision 0.844 against
+#: recall 0.942, the signature of a threshold set too low (Subbab 2.7.5). A
+#: sweep gave:
+#:
+#:     onset  notes      P       R       F
+#:     0.30     122   0.5246  0.9275  0.6702
+#:     0.50      77   0.8442  0.9420  0.8904
+#:     0.60      73   0.9041  0.9565  0.9296
+#:     0.70      71   0.9155  0.9420  0.9286
+#:     0.80      63   0.9048  0.8261  0.8636
+#:
+#: Recall rises along with precision because mir_eval matches one to one
+#: (Subbab 2.9.1), so a spurious note can take the pairing a correct note
+#: needed; removing spurious notes helps both.
+#:
+#: THIS VALUE IS TUNED ON THE ONLY SAMPLE THAT EXISTS. With one sample there is
+#: no way to tell whether 0.6 generalises or merely suits a1, and a parameter
+#: chosen from the results it is later used to produce cannot be defended.
+#: Before Bab IV: rerun the sweep across all nine corpus samples, pick one value
+#: that works throughout, and report the sweep itself as part of the results
+#: rather than presenting the figure as if it had been fixed in advance.
+ONSET_THRESHOLD = 0.6
+
 FRAME_THRESHOLD = 0.3
 
 #: DEVIATION from the library default of 127.70 ms.
@@ -147,6 +172,31 @@ RS_N = 255  # codeword length in symbols, the maximum for GF(2^8)
 RS_K = 223  # data symbols per codeword
 RS_NSYM = RS_N - RS_K  # 32 parity symbols -> corrects 16 symbol errors
 
+#: OPEN QUESTION, to settle with corpus measurements in Fase 5.
+#:
+#: Subbab 3.3.4 zero-pads the final codeword, and that padding is fragmented and
+#: synthesised along with everything else. So any payload costs at least one
+#: whole codeword: 255 coded bytes -> 9 oligos -> 1818 bases, whether the token
+#: stream is 23 bytes or 223. One byte past 223 doubles the base count.
+#:
+#: The waste falls hardest on short, highly repetitive samples, which is exactly
+#: the corner of Tabel 3.4 where the token scheme should look best, so it could
+#: confound the duration dimension of the efficiency results.
+#:
+#: MEASURED 2026-08-07 on a real 132 s, 192 kbps MP3, and the effect is large:
+#: payloads of 909 and 1114 bytes both produced exactly 8888 bases, so a 23%
+#: difference in payload vanished entirely, while going from 1114 to 1165 bytes
+#: (+4.6%) raised the base count by 20%. Across a nine-sample corpus,
+#: differences between samples can therefore be created or erased by where the
+#: codeword boundary happens to fall rather than by the music.
+#:
+#: Decision taken 2026-08-07: leave the design as written and report this as an
+#: open limitation. Bab IV is not imminent and the near-term deliverable is a
+#: conference paper. The standard fix, if it is taken up later, is a shortened
+#: RS code -- pad for encoding, transmit only the real data and parity -- which
+#: needs the payload length stored somewhere, cheapest as a header in the first
+#: oligo, and revisions to Tabel 3.10 and Subbab 3.3.4.
+#:
 #: Exactly 223/255 = 0.87451. Subbab 2.4.3 and Subbab 3.3.4 both quote 0.875,
 #: which is that value rounded to three decimals rather than the code rate
 #: itself. Parity overhead is 32/255 = 12.55% of synthesised symbols, not 12.5%.
@@ -169,9 +219,23 @@ OLIGO_PAYLOAD_NT = 162
 PRIMER_NT = 20
 OLIGO_TOTAL_NT = PRIMER_NT + OLIGO_PAYLOAD_NT + PRIMER_NT  # 202
 
+#: OPEN LIMITATION, left as designed by decision of 2026-08-07.
+#:
 #: The 2-byte index caps how many oligos one file can span, and therefore how
-#: much RS-coded data the format addresses: 65536 * 29 bytes, about 1.81 MiB.
-#: Well beyond the 2-minute corpus, but a real ceiling worth stating in Bab IV.
+#: much RS-coded data the format addresses: 65536 * 29 bytes, about 1.81 MiB,
+#: or roughly 1.59 MiB of payload. At 192 kbps that is 69 seconds of MP3.
+#:
+#: This is not merely a ceiling: Tabel 3.1 requirement 11 has the system encode
+#: raw MP3 through the same codec as a comparison path, and Tabel 3.4 asks for
+#: two-minute samples. A 132 s test file needed 125443 oligos, nearly twice
+#: what the index can address, so requirement 11 cannot be met for the longer
+#: samples as the design stands.
+#:
+#: Reported base counts are unaffected: comparison path B1 exists to count
+#: bases, never to decode, and :func:`src.baselines.count_bases` computes that
+#: count exactly from Persamaan 3.2 without building any oligo. Widening the
+#: index to 3 bytes would fix it, at 28 data bytes per oligo instead of 29, a
+#: 3.4% capacity cost.
 MAX_OLIGO_COUNT = 1 << (OLIGO_INDEX_BYTES * 8)
 MAX_CODED_BYTES = MAX_OLIGO_COUNT * OLIGO_DATA_BYTES
 

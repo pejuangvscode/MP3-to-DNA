@@ -378,3 +378,58 @@ def read_fasta(path) -> list[str]:
     """Read oligo sequences back, uppercased."""
     with open(path) as handle:
         return [str(record.seq).upper() for record in SeqIO.parse(handle, "fasta")]
+
+
+# ---------------------------------------------------------------------------
+# Round-trip verification
+# ---------------------------------------------------------------------------
+
+#: Written next to a FASTA file so losslessness can be checked later.
+PAYLOAD_MANIFEST_SUFFIX = ".payload.json"
+
+
+def write_payload_manifest(fasta_path, data: bytes):
+    """Record what went in, so what comes out can be checked against it.
+
+    Subbab 3.2.3 makes bit-identical recovery the decisive requirement, and a
+    FASTA file alone cannot prove it: decoding always yields *something*. This
+    stores the payload length and digest so the claim can actually be tested
+    rather than assumed.
+    """
+    import json
+    from pathlib import Path
+
+    fasta_path = Path(fasta_path)
+    manifest_path = fasta_path.with_suffix(fasta_path.suffix + PAYLOAD_MANIFEST_SUFFIX)
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "payload_bytes": len(data),
+                "sha256": hashlib.sha256(data).hexdigest(),
+            },
+            indent=1,
+        )
+    )
+    return manifest_path
+
+
+def verify_lossless(fasta_path, manifest_path=None) -> bool | None:
+    """Decode a FASTA and compare it against its payload manifest.
+
+    Returns None when no manifest exists, which means unverified rather than
+    failed. Callers must not report the codec stage as lossless in that case.
+    """
+    import json
+    from pathlib import Path
+
+    fasta_path = Path(fasta_path)
+    manifest_path = Path(
+        manifest_path
+        or fasta_path.with_suffix(fasta_path.suffix + PAYLOAD_MANIFEST_SUFFIX)
+    )
+    if not manifest_path.is_file():
+        return None
+
+    manifest = json.loads(manifest_path.read_text())
+    recovered = decode(read_fasta(fasta_path))[: manifest["payload_bytes"]]
+    return hashlib.sha256(recovered).hexdigest() == manifest["sha256"]

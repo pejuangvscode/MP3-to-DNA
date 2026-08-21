@@ -8,6 +8,7 @@ import pytest
 
 from src import config as cfg
 from src import dna_codec as codec
+from src import tokenizer
 
 
 def random_bytes(rng: random.Random, length: int) -> bytes:
@@ -177,8 +178,38 @@ def test_oligos_decode_in_any_order():
 def test_a_missing_oligo_is_reported():
     report = codec.encode(bytes(range(256)) * 4)
     assert report.oligo_count > 2
+    without_the_second = report.oligos[:1] + report.oligos[2:]
     with pytest.raises(codec.DNACodecError, match="missing oligo"):
-        codec.decode(report.oligos[:-1] + report.oligos[:1])
+        codec.decode(without_the_second)
+
+
+def test_a_lost_tail_is_caught_one_layer_up():
+    """A missing oligo at the end leaves no gap in the indices.
+
+    Tabel 3.10 gives each oligo an index but no total count, so dropping the
+    last one produces a shorter stream that still looks contiguous, and
+    :func:`decode` has nothing to detect. The token header does: it states how
+    many tokens follow, so unpacking runs off the end of the stream.
+
+    Worth stating in Bab IV, though it changes no reported figure: the study
+    injects no errors, so no oligo is ever lost.
+    """
+    rng = random.Random(21)
+    notes = []
+    position = 0
+    for _ in range(400):
+        notes.append(
+            tokenizer.QuantizedNote(rng.randrange(48, 84), position, rng.randrange(1, 17))
+        )
+        position += rng.randrange(1, 9)
+    packed = tokenizer.encode_notes(notes, 120).data
+
+    report = codec.encode(packed)
+    assert report.oligo_count > 4
+    truncated = codec.decode(report.oligos[:-1])  # succeeds, silently short
+
+    with pytest.raises(tokenizer.TokenRangeError, match="stream ended"):
+        tokenizer.decode_bytes(truncated)
 
 
 def test_duplicate_oligo_is_reported():

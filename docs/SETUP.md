@@ -4,11 +4,20 @@ Two environments are involved:
 
 | Environment | Used for | GPU |
 |---|---|---|
-| Windows (current) | Fase 0–1: token scheme and DNA codec | not needed |
-| WSL2 | Fase 2 onward: basic-pitch transcription and full pipeline runs | RTX 4050 |
+| Windows (current) | the whole pipeline | not needed |
+| WSL2 | optional, deferred | RTX 4050 |
 
-Fase 1 is pure integer and bit manipulation, so it develops and tests entirely
-on Windows. WSL2 is only required once transcription enters the picture.
+**The pipeline runs entirely on Windows, including transcription.** basic-pitch
+on CPU measures 91x realtime: 120 seconds of audio transcribes in 1.3 seconds,
+after a one-off 15 second model load. The nine-sample corpus therefore costs
+roughly 7 seconds of inference in total, and results are cached after that.
+
+That is worth reporting rather than apologising for. Subbab 2.7.6 cites Bittner
+dkk. (2022) for basic-pitch being lightweight and undemanding of compute; these
+timings are direct empirical support for that claim.
+
+Section 2 below is kept for reference in case GPU inference is wanted later. It
+buys almost nothing at this corpus size.
 
 ---
 
@@ -75,10 +84,20 @@ do **not** install an NVIDIA driver inside the Linux distro.
 
 ### 2.2 Python environment inside WSL
 
+The distro's own Python will not work. Ubuntu 26.04 ships Python 3.14, and
+TensorFlow publishes no wheel for it; TF 2.15 supports 3.9 to 3.11 only. The
+plain `python3 -m venv` route fails with `No matching distribution found for
+tensorflow`, which reads like a network problem but is a version mismatch.
+
+`uv` fetches a standalone CPython 3.11 with no compiling and no PPA, which
+matters on a release too new for deadsnakes to target:
+
 ```bash
-sudo apt update && sudo apt install -y python3-venv python3-pip
-python3 -m venv ~/.venvs/mp3dna
-source ~/.venvs/mp3dna/bin/activate
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+```bash
+uv venv --python 3.11 ~/.venvs/mp3dna && source ~/.venvs/mp3dna/bin/activate
 ```
 
 Install TensorFlow with CUDA **before** the rest, so the CUDA runtime packages
@@ -86,8 +105,11 @@ come along; the pinned `tensorflow==2.15.0` in `requirements.txt` is then alread
 satisfied and pip leaves it alone:
 
 ```bash
-pip install "tensorflow[and-cuda]==2.15.0"
-pip install -r requirements.txt
+uv pip install "tensorflow[and-cuda]==2.15.0"
+```
+
+```bash
+uv pip install -r "/mnt/c/dari laptop lama/TA1/source_code/requirements.txt"
 ```
 
 ### 2.3 Verify the GPU is visible
