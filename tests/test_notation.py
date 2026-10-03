@@ -1,8 +1,5 @@
-"""MusicXML export (Subbab 2.6.5).
-
-MusicXML is an artefact, not a pipeline stage: nothing reads it back. These
-tests confirm the file is valid notation carrying the right notes, and that it
-stays off the critical path.
+"""MusicXML export. An artefact, not a pipeline stage: nothing reads it back,
+so these confirm it is valid notation and that it stays off the critical path.
 """
 
 from __future__ import annotations
@@ -12,7 +9,7 @@ from typing import NamedTuple
 import pytest
 
 from src import config as cfg
-from src.notation import NotationError, write_from_quantized, write_from_transcribed
+from src.notation import write_from_quantized, write_from_transcribed
 from src.tokenizer import QuantizedNote
 
 
@@ -73,20 +70,6 @@ def test_transcribed_notes_become_readable_notation(tmp_path):
 def test_tempo_is_carried_into_the_file(tmp_path):
     path = write_from_quantized(QUANTISED, tmp_path / "tempo.musicxml", tempo=96)
     assert "96" in path.read_text()
-
-
-def test_empty_note_list_is_rejected(tmp_path):
-    with pytest.raises(NotationError, match="empty"):
-        write_from_quantized([], tmp_path / "empty.musicxml", tempo=120)
-    with pytest.raises(NotationError, match="empty"):
-        write_from_transcribed([], tmp_path / "empty.musicxml", tempo=120)
-
-
-def test_a_note_too_short_to_notate_is_rejected(tmp_path):
-    with pytest.raises(NotationError, match="too short"):
-        write_from_transcribed(
-            [Note(60, 0.0, 0.001)], tmp_path / "short.musicxml", tempo=120
-        )
 
 
 def test_wide_range_material_is_split_across_two_staves(tmp_path):

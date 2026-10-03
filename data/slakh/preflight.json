@@ -1,0 +1,267 @@
+{
+ "source": "new_dataset\\slakh_subset",
+ "grid_code": 2,
+ "seed": 0,
+ "tracks_scanned": 120,
+ "tracks_segmented": 13,
+ "segments_kept": 80,
+ "dev": 15,
+ "test": 65,
+ "rejections": [
+  {
+   "track": "Track01877",
+   "reason": "tempo_map",
+   "detail": "53 distinct tempi [72, 73, 74, 75, 76, 77]; the header holds one"
+  },
+  {
+   "track": "Track01882",
+   "reason": "tempo_map",
+   "detail": "11 distinct tempi [60, 73, 74, 75, 76, 77]; the header holds one"
+  },
+  {
+   "track": "Track01887",
+   "reason": "tempo_map",
+   "detail": "7 distinct tempi [41, 50, 86, 97, 108, 120]; the header holds one"
+  },
+  {
+   "track": "Track01891",
+   "reason": "tempo_map",
+   "detail": "7 distinct tempi [49, 53, 55, 56, 57, 58]; the header holds one"
+  },
+  {
+   "track": "Track01895",
+   "reason": "tempo_map",
+   "detail": "2 distinct tempi [100, 136]; the header holds one"
+  },
+  {
+   "track": "Track01897",
+   "reason": "tempo_map",
+   "detail": "3 distinct tempi [40, 50, 62]; the header holds one"
+  },
+  {
+   "track": "Track01898",
+   "reason": "tempo_map",
+   "detail": "4 distinct tempi [60, 83, 96, 250]; the header holds one"
+  },
+  {
+   "track": "Track01900",
+   "reason": "tempo_map",
+   "detail": "8 distinct tempi [90, 96, 100, 104, 105, 106]; the header holds one"
+  },
+  {
+   "track": "Track01902",
+   "reason": "tempo_map",
+   "detail": "5 distinct tempi [65, 68, 71, 74, 77]; the header holds one"
+  },
+  {
+   "track": "Track01903",
+   "reason": "tempo_map",
+   "detail": "6 distinct tempi [54, 58, 64, 68, 74, 120]; the header holds one"
+  },
+  {
+   "track": "Track01905",
+   "reason": "off_grid",
+   "detail": "best fit still 0.27 of a grid unit off at 106 BPM, grid 2; the piece is played rather than sequenced"
+  },
+  {
+   "track": "Track01907",
+   "reason": "tempo_map",
+   "detail": "2 distinct tempi [76, 82]; the header holds one"
+  },
+  {
+   "track": "Track01913",
+   "reason": "tempo_map",
+   "detail": "35 distinct tempi [16, 25, 34, 41, 43, 47]; the header holds one"
+  },
+  {
+   "track": "Track01916",
+   "reason": "tempo_map",
+   "detail": "39 distinct tempi [33, 34, 35, 36, 37, 38]; the header holds one"
+  },
+  {
+   "track": "Track01917",
+   "reason": "tempo_map",
+   "detail": "7 distinct tempi [50, 60, 67, 70, 72, 75]; the header holds one"
+  },
+  {
+   "track": "Track01918",
+   "reason": "tempo_map",
+   "detail": "2 distinct tempi [70, 120]; the header holds one"
+  },
+  {
+   "track": "Track01936",
+   "reason": "tempo_map",
+   "detail": "6 distinct tempi [88, 94, 98, 102, 106, 113]; the header holds one"
+  },
+  {
+   "track": "Track01940",
+   "reason": "tempo_map",
+   "detail": "33 distinct tempi [67, 69, 72, 73, 75, 77]; the header holds one"
+  },
+  {
+   "track": "Track01945",
+   "reason": "tempo_map",
+   "detail": "2 distinct tempi [88, 125]; the header holds one"
+  },
+  {
+   "track": "Track01950",
+   "reason": "tempo_map",
+   "detail": "4 distinct tempi [74, 94, 99, 110]; the header holds one"
+  },
+  {
+   "track": "Track01956",
+   "reason": "tempo_map",
+   "detail": "4 distinct tempi [60, 110, 116, 127]; the header holds one"
+  },
+  {
+   "track": "Track01957",
+   "reason": "tempo_map",
+   "detail": "2 distinct tempi [85, 168]; the header holds one"
+  },
+  {
+   "track": "Track01959",
+   "reason": "tempo_map",
+   "detail": "2 distinct tempi [90, 250]; the header holds one"
+  },
+  {
+   "track": "Track01960",
+   "reason": "tempo_map",
+   "detail": "5 distinct tempi [45, 61, 67, 69, 72]; the header holds one"
+  },
+  {
+   "track": "Track01965",
+   "reason": "off_grid",
+   "detail": "best fit still 0.28 of a grid unit off at 118 BPM, grid 2; the piece is played rather than sequenced"
+  },
+  {
+   "track": "Track01968",
+   "reason": "tempo_map",
+   "detail": "28 distinct tempi [100, 101, 102, 103, 104, 105]; the header holds one"
+  },
+  {
+   "track": "Track01974",
+   "reason": "tempo_map",
+   "detail": "2 distinct tempi [66, 76]; the header holds one"
+  },
+  {
+   "track": "Track01975",
+   "reason": "tempo_map",
+   "detail": "14 distinct tempi [49, 63, 65, 67, 69, 70]; the header holds one"
+  },
+  {
+   "track": "Track01976",
+   "reason": "tempo_map",
+   "detail": "13 distinct tempi [50, 80, 84, 85, 86, 87]; the header holds one"
+  },
+  {
+   "track": "Track01980",
+   "reason": "tempo_map",
+   "detail": "8 distinct tempi [72, 77, 83, 86, 89, 90]; the header holds one"
+  },
+  {
+   "track": "Track01985",
+   "reason": "tempo_map",
+   "detail": "3 distinct tempi [108, 114, 116]; the header holds one"
+  },
+  {
+   "track": "Track01986",
+   "reason": "tempo_map",
+   "detail": "2 distinct tempi [63, 98]; the header holds one"
+  },
+  {
+   "track": "Track01987",
+   "reason": "off_grid",
+   "detail": "best fit still 0.27 of a grid unit off at 240 BPM, grid 3; the piece is played rather than sequenced"
+  },
+  {
+   "track": "Track01990",
+   "reason": "tempo_map",
+   "detail": "64 distinct tempi [57, 64, 65, 66, 67, 68]; the header holds one"
+  },
+  {
+   "track": "Track01995",
+   "reason": "off_grid",
+   "detail": "best fit still 0.27 of a grid unit off at 240 BPM, grid 3; the piece is played rather than sequenced"
+  },
+  {
+   "track": "Track01996",
+   "reason": "off_grid",
+   "detail": "best fit still 0.28 of a grid unit off at 55 BPM, grid 2; the piece is played rather than sequenced"
+  },
+  {
+   "track": "Track01998",
+   "reason": "tempo_map",
+   "detail": "59 distinct tempi [30, 31, 32, 33, 34, 35]; the header holds one"
+  },
+  {
+   "track": "Track02000",
+   "reason": "tempo_map",
+   "detail": "6 distinct tempi [80, 90, 100, 110, 116, 120]; the header holds one"
+  },
+  {
+   "track": "Track02002",
+   "reason": "tempo_map",
+   "detail": "4 distinct tempi [91, 94, 96, 106]; the header holds one"
+  },
+  {
+   "track": "Track02004",
+   "reason": "tempo_map",
+   "detail": "33 distinct tempi [67, 69, 72, 73, 75, 77]; the header holds one"
+  },
+  {
+   "track": "Track02007",
+   "reason": "too_short",
+   "detail": "no segment reached the note floor"
+  },
+  {
+   "track": "Track02010",
+   "reason": "tempo_map",
+   "detail": "7 distinct tempi [90, 98, 101, 103, 105, 110]; the header holds one"
+  },
+  {
+   "track": "Track02016",
+   "reason": "tempo_map",
+   "detail": "5 distinct tempi [90, 95, 97, 98, 112]; the header holds one"
+  },
+  {
+   "track": "Track02018",
+   "reason": "tempo_map",
+   "detail": "3 distinct tempi [123, 129, 132]; the header holds one"
+  },
+  {
+   "track": "Track02020",
+   "reason": "tempo_map",
+   "detail": "3 distinct tempi [80, 82, 114]; the header holds one"
+  },
+  {
+   "track": "Track02024",
+   "reason": "tempo_map",
+   "detail": "27 distinct tempi [24, 25, 27, 28, 30, 33]; the header holds one"
+  },
+  {
+   "track": "Track02030",
+   "reason": "tempo_map",
+   "detail": "35 distinct tempi [20, 25, 34, 41, 43, 47]; the header holds one"
+  },
+  {
+   "track": "Track02032",
+   "reason": "tempo_map",
+   "detail": "4 distinct tempi [65, 70, 75, 100]; the header holds one"
+  },
+  {
+   "track": "Track02040",
+   "reason": "tempo_map",
+   "detail": "22 distinct tempi [50, 55, 60, 66, 72, 75]; the header holds one"
+  },
+  {
+   "track": "Track02046",
+   "reason": "tempo_map",
+   "detail": "7 distinct tempi [38, 51, 54, 57, 60, 64]; the header holds one"
+  }
+ ],
+ "notes_total": 70059,
+ "clamped_durations_total": 9197,
+ "truncated_durations_total": 13,
+ "max_delta_observed": 252,
+ "delta_limit": 255
+}

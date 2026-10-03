@@ -1,21 +1,10 @@
-"""Run the whole corpus and produce the tables Bab IV reports (Tabel 3.14).
+"""Run the whole corpus and produce the tables of Tabel 3.14 in one command, so
+results can be regenerated rather than transcribed by hand from scattered runs.
 
-One command turns a validated corpus into every figure the report needs, so
-the results can be regenerated from scratch after any change rather than
-transcribed by hand from scattered runs.
-
-Each sample goes through six test groups:
-
-    functional      every module runs and produces its contracted output
-    round trip      tokens recovered after decoding are bit-identical
-    compliance      GC content and homopolymer length over every oligo
-    determinism     a second run yields byte-identical sequences
-    efficiency      base counts against the three paths of Tabel 3.12
-    accuracy        note-level metrics against the reference notation
-
-The round-trip check comes first for each sample, and a failure there is
-reported as such rather than folded into the metrics: Subbab 3.2.3 makes it the
-precondition for reading anything else.
+Per sample: encode, verify the round trip, check determinism, decode, measure
+compliance, count bases against the three comparison paths, score accuracy. The
+round-trip check comes first, and a failure is reported as such rather than
+folded into the metrics.
 
     python -m src.experiment --data-dir data --output results
 """
@@ -37,11 +26,12 @@ from src import encode as encode_path
 from src import evaluate
 from src.corpus import CorpusSample, load_manifest
 from src.reconstruct import read_midi
+from src.transcribe import TranscriptionParams
 
 
 @dataclass
 class SampleResult:
-    """Everything measured for one corpus sample."""
+    """One sample's measurements."""
 
     sample: CorpusSample
     row: dict
@@ -61,9 +51,16 @@ def _timed(function, *args, **kwargs):
 def run_sample(
     sample: CorpusSample,
     out_dir: Path,
-    grid_code: int = cfg.DEFAULT_GRID_CODE,
+    grid_code: int | None = None,
+    params: TranscriptionParams | None = None,
 ) -> SampleResult:
-    """Encode, decode and measure one sample."""
+    """Encode, decode and measure one sample.
+
+    `grid_code` overrides the manifest, for sweeping one grid across the corpus.
+    `params` overrides the transcription thresholds, which is how a value
+    calibrated on the dev split is carried over to the test split.
+    """
+    grid_code = sample.grid_code if grid_code is None else grid_code
     problems: list[str] = []
     row: dict = {
         "sample": sample.name,
@@ -79,7 +76,7 @@ def run_sample(
 
     started = time.perf_counter()
 
-    # --- encode -----------------------------------------------------------
+    # --- encode ---
     encoded, encode_seconds = _timed(
         encode_path.run,
         sample.audio_path,
@@ -88,7 +85,9 @@ def run_sample(
         grid_code=grid_code,
         work_dir=work,
         cache_dir=work / "cache",
+        params=params,
         write_musicxml=True,
+        name=sample.name,
     )
     row.update(
         {
@@ -114,7 +113,7 @@ def run_sample(
         }
     )
 
-    # --- repeat detection contribution (Subbab 3.3.5) ---------------------
+    # --- repeat detection contribution (Subbab 3.3.5) ---
     plain = encode_path.encode_tokens(
         encoded.quantization, sample.tempo, grid_code, use_repeat_detection=False
     )
@@ -129,7 +128,7 @@ def run_sample(
         (1 - encoded.dna.total_bases / plain_dna.total_bases) * 100.0, 2
     )
 
-    # --- round trip, before anything else is believed ---------------------
+    # --- round trip, before anything else is believed ---
     lossless = codec.verify_lossless(fasta)
     row["lossless"] = lossless
     if lossless is not True:
@@ -138,14 +137,14 @@ def run_sample(
             "suspect (Subbab 3.2.3)"
         )
 
-    # --- determinism (Tabel 3.2) ------------------------------------------
+    # --- determinism (Tabel 3.2) ---
     repeat = codec.encode(encoded.tokens.data)
     deterministic = repeat.oligos == encoded.dna.oligos
     row["deterministic"] = deterministic
     if not deterministic:
         problems.append("a second encoding produced different sequences")
 
-    # --- decode -----------------------------------------------------------
+    # --- decode ---
     decoded, decode_seconds = _timed(
         decode_path.run, fasta, midi_out, write_musicxml=True
     )
@@ -154,7 +153,7 @@ def run_sample(
     if list(decoded.tokens.notes) != list(encoded.quantization.notes):
         problems.append("reconstructed notes differ from the quantised notes")
 
-    # --- compliance -------------------------------------------------------
+    # --- compliance ---
     oligos = codec.read_fasta(fasta)
     checked = evaluate.compliance(oligos, encoded.dna.rescramble_count)
     row.update(
@@ -171,9 +170,9 @@ def run_sample(
     if not checked.compliant:
         problems.append("some oligos violate the biological constraints")
 
-    # --- efficiency (Tabel 3.12) ------------------------------------------
-    # B1 is counted, not built: a two-minute MP3 needs more oligos than a
-    # 2-byte index can address, and this path is never decoded anyway.
+    # --- efficiency (Tabel 3.12) ---
+    # counted, not built: this path is never decoded, and a two-minute MP3
+    # needs more oligos than the 2-byte index can address
     direct = baselines.encode_file(sample.audio_path, "B1 direct", materialize=False)
     symbolic = baselines.symbolic(encoded.transcribed_midi_path)
     theoretical = baselines.theoretical(direct.input_bytes)
@@ -197,7 +196,7 @@ def run_sample(
         }
     )
 
-    # --- accuracy (Subbab 2.9), only where a reference exists -------------
+    # --- accuracy (Subbab 2.9), only where a reference exists ---
     if sample.midi_path.is_file():
         reference = read_midi(sample.midi_path)
         transcribed = read_midi(encoded.transcribed_midi_path)
@@ -232,36 +231,29 @@ def run_sample(
 def run_all(
     data_dir: str | Path,
     out_dir: str | Path,
-    grid_code: int = cfg.DEFAULT_GRID_CODE,
+    grid_code: int | None = None,
     only: Sequence[str] | None = None,
+    split: str | None = None,
+    params: TranscriptionParams | None = None,
 ) -> list[SampleResult]:
     data_dir, out_dir = Path(data_dir), Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     samples = load_manifest(data_dir)
+    if split:
+        samples = [sample for sample in samples if sample.split == split]
     if only:
         wanted = set(only)
         samples = [sample for sample in samples if sample.name in wanted]
-        if not samples:
-            raise ValueError(f"no sample matched {sorted(wanted)}")
 
     results: list[SampleResult] = []
     for index, sample in enumerate(samples, start=1):
         print(f"[{index}/{len(samples)}] {sample.name} ...", flush=True)
-        try:
-            results.append(run_sample(sample, out_dir, grid_code))
-        except Exception as exc:
-            print(f"    failed: {exc}", file=sys.stderr)
-            results.append(
-                SampleResult(sample, {"sample": sample.name}, [f"run failed: {exc}"])
-            )
+        results.append(run_sample(sample, out_dir, grid_code, params))
     return results
 
 
-# ---------------------------------------------------------------------------
-# Tables
-# ---------------------------------------------------------------------------
-
+# --- tables ---
 
 def _markdown_table(rows: list[dict], columns: list[tuple[str, str]]) -> list[str]:
     """Rows as a markdown table, given (key, heading) pairs."""
@@ -280,7 +272,7 @@ def _markdown_table(rows: list[dict], columns: list[tuple[str, str]]) -> list[st
 
 
 def write_tables(results: list[SampleResult], out_dir: str | Path) -> Path:
-    """Write the per-sample CSV and a readable summary of every table."""
+    """Write the per-sample CSV and the summary tables."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     rows = [result.row for result in results if len(result.row) > 1]
@@ -407,20 +399,45 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--grid",
         type=int,
-        default=cfg.DEFAULT_GRID_CODE,
+        default=None,
         choices=sorted(cfg.GRID_SUBDIVISIONS),
+        help="override the per-sample grid recorded in the manifest",
     )
     parser.add_argument(
         "--only", nargs="*", help="run only these samples, by name"
     )
+    parser.add_argument(
+        "--split", default=None, help="run only this split of the corpus, dev or test"
+    )
+    parser.add_argument(
+        "--onset-threshold",
+        type=float,
+        default=None,
+        help=f"override the onset threshold (config: {cfg.ONSET_THRESHOLD})",
+    )
+    parser.add_argument(
+        "--frame-threshold",
+        type=float,
+        default=None,
+        help=f"override the frame threshold (config: {cfg.FRAME_THRESHOLD})",
+    )
     args = parser.parse_args(argv)
 
-    try:
-        results = run_all(args.data_dir, args.output, args.grid, args.only)
-        summary = write_tables(results, args.output)
-    except Exception as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
+    params = None
+    if args.onset_threshold is not None or args.frame_threshold is not None:
+        params = TranscriptionParams(
+            onset_threshold=(
+                cfg.ONSET_THRESHOLD if args.onset_threshold is None else args.onset_threshold
+            ),
+            frame_threshold=(
+                cfg.FRAME_THRESHOLD if args.frame_threshold is None else args.frame_threshold
+            ),
+        )
+
+    results = run_all(
+        args.data_dir, args.output, args.grid, args.only, args.split, params
+    )
+    summary = write_tables(results, args.output)
 
     usable = [result for result in results if result.ok]
     print()

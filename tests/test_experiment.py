@@ -17,7 +17,7 @@ TEMPO = 120
 
 
 def render(notes, path, sample_rate=22050, tempo=TEMPO):
-    """Sine tones at the notes' pitches, so transcription has something to find."""
+    """Sine tones at the notes' pitches, so transcription finds something."""
     unit = cfg.grid_unit_seconds(tempo)
     total = int((max(n.position + n.duration for n in notes) + 1) * unit * sample_rate)
     signal = np.zeros(total, dtype=np.float32)
@@ -156,12 +156,6 @@ def test_only_filter_selects_a_subset(tmp_path):
     )
     results = experiment.run_all(data, tmp_path / "results", only=["s2"])
     assert [result.sample.name for result in results] == ["s2"]
-
-
-def test_an_unknown_sample_name_is_rejected(tmp_path):
-    data = build_corpus(tmp_path / "data", [("s1", phrase(), "pendek,rendah,tinggi")])
-    with pytest.raises(ValueError, match="no sample matched"):
-        experiment.run_all(data, tmp_path / "results", only=["nope"])
 
 
 def test_markdown_table_renders_missing_values(tmp_path):

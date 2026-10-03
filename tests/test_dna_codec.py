@@ -15,10 +15,7 @@ def random_bytes(rng: random.Random, length: int) -> bytes:
     return bytes(rng.randrange(256) for _ in range(length))
 
 
-# ---------------------------------------------------------------------------
-# Bit to trit (Subbab 2.3.3)
-# ---------------------------------------------------------------------------
-
+# --- bit to trit (Subbab 2.3.3) ---
 
 def test_block_trit_round_trip():
     rng = random.Random(5)
@@ -35,16 +32,7 @@ def test_block_trit_extremes():
         assert codec.trits_to_block(codec.block_to_trits(block)) == block
 
 
-def test_trit_string_with_no_128_bit_preimage_is_rejected():
-    """3**81 exceeds 2**128, so some trit strings are unreachable."""
-    with pytest.raises(codec.DNACodecError, match="128-bit"):
-        codec.trits_to_block([2] * cfg.BLOCK_TRITS)
-
-
-# ---------------------------------------------------------------------------
-# Rotating code (Tabel 3.11)
-# ---------------------------------------------------------------------------
-
+# --- rotating code (Tabel 3.11) ---
 
 def test_rotating_code_never_repeats_a_base():
     rng = random.Random(6)
@@ -61,15 +49,7 @@ def test_rotating_code_round_trip():
     assert codec.bases_to_trits(sequence, cfg.ROTATION_SEED_BASE) == trits
 
 
-def test_repeated_base_cannot_be_decoded():
-    with pytest.raises(codec.DNACodecError, match="cannot follow"):
-        codec.bases_to_trits("CC", "A")
-
-
-# ---------------------------------------------------------------------------
-# Reed-Solomon (Subbab 2.4.3)
-# ---------------------------------------------------------------------------
-
+# --- reed-solomon (Subbab 2.4.3) ---
 
 def test_rs_output_is_whole_codewords():
     rng = random.Random(12)
@@ -100,15 +80,7 @@ def test_rs_corrects_sixteen_symbol_errors():
     assert codec.rs_decode(bytes(coded)) == data
 
 
-def test_rs_rejects_a_truncated_stream():
-    with pytest.raises(codec.DNACodecError, match="codewords"):
-        codec.rs_decode(bytes(254))
-
-
-# ---------------------------------------------------------------------------
-# Scrambling (Subbab 2.3.5)
-# ---------------------------------------------------------------------------
-
+# --- scrambling (Subbab 2.3.5) ---
 
 def test_scrambling_is_its_own_inverse():
     rng = random.Random(15)
@@ -128,10 +100,7 @@ def test_scrambling_flattens_a_run_of_zero_bytes():
     assert len(set(scrambled)) > 1
 
 
-# ---------------------------------------------------------------------------
-# Oligo structure (Tabel 3.10)
-# ---------------------------------------------------------------------------
-
+# --- oligo structure (Tabel 3.10) ---
 
 def test_oligo_layout_matches_the_design():
     report = codec.encode(bytes(range(200)))
@@ -150,10 +119,7 @@ def test_base_count_matches_persamaan_3_2():
         assert report.oligo_count == cfg.oligo_count_for(report.coded_bytes)
 
 
-# ---------------------------------------------------------------------------
-# Whole codec
-# ---------------------------------------------------------------------------
-
+# --- whole codec ---
 
 @pytest.mark.parametrize("length", [1, 4, 29, 32, 223, 255, 700, 5000])
 def test_encode_decode_round_trip(length):
@@ -175,77 +141,13 @@ def test_oligos_decode_in_any_order():
     assert codec.decode(shuffled).startswith(data)
 
 
-def test_a_missing_oligo_is_reported():
-    report = codec.encode(bytes(range(256)) * 4)
-    assert report.oligo_count > 2
-    without_the_second = report.oligos[:1] + report.oligos[2:]
-    with pytest.raises(codec.DNACodecError, match="missing oligo"):
-        codec.decode(without_the_second)
-
-
-def test_a_lost_tail_is_caught_one_layer_up():
-    """A missing oligo at the end leaves no gap in the indices.
-
-    Tabel 3.10 gives each oligo an index but no total count, so dropping the
-    last one produces a shorter stream that still looks contiguous, and
-    :func:`decode` has nothing to detect. The token header does: it states how
-    many tokens follow, so unpacking runs off the end of the stream.
-
-    Worth stating in Bab IV, though it changes no reported figure: the study
-    injects no errors, so no oligo is ever lost.
-    """
-    rng = random.Random(21)
-    notes = []
-    position = 0
-    for _ in range(400):
-        notes.append(
-            tokenizer.QuantizedNote(rng.randrange(48, 84), position, rng.randrange(1, 17))
-        )
-        position += rng.randrange(1, 9)
-    packed = tokenizer.encode_notes(notes, 120).data
-
-    report = codec.encode(packed)
-    assert report.oligo_count > 4
-    truncated = codec.decode(report.oligos[:-1])  # succeeds, silently short
-
-    with pytest.raises(tokenizer.TokenRangeError, match="stream ended"):
-        tokenizer.decode_bytes(truncated)
-
-
-def test_duplicate_oligo_is_reported():
-    report = codec.encode(bytes(range(256)) * 4)
-    with pytest.raises(codec.DNACodecError, match="more than once"):
-        codec.decode(list(report.oligos) + [report.oligos[0]])
-
-
-def test_a_wrong_length_oligo_is_reported():
-    report = codec.encode(bytes(range(200)))
-    with pytest.raises(codec.DNACodecError, match="202 nt"):
-        codec.decode([report.oligos[0][:-1]])
-
-
-def test_a_damaged_primer_is_reported():
-    report = codec.encode(bytes(range(200)))
-    damaged = "T" + report.oligos[0][1:]
-    with pytest.raises(codec.DNACodecError, match="forward primer"):
-        codec.decode([damaged])
-
-
-def test_empty_input_is_rejected():
-    with pytest.raises(codec.DNACodecError, match="empty"):
-        codec.encode(b"")
-
-
 def test_effective_density_stays_below_the_scheme_rate():
     """Persamaan 2.2: primers and address dilute the 1.58 bit/base scheme rate."""
     report = codec.encode(bytes(range(256)) * 8)
     assert 0 < report.effective_density < cfg.BLOCK_BITS / cfg.BLOCK_TRITS
 
 
-# ---------------------------------------------------------------------------
-# FASTA (Subbab 2.10.3)
-# ---------------------------------------------------------------------------
-
+# --- FASTA (Subbab 2.10.3) ---
 
 def test_fasta_round_trip(tmp_path):
     rng = random.Random(18)

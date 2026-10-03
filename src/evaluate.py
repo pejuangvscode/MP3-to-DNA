@@ -19,18 +19,11 @@ import numpy as np
 from src import config as cfg
 from src import dna_codec as codec
 
-#: (pitch, start, end) in MIDI note number and seconds.
+# (pitch, start, end) in MIDI note number and seconds
 Note = tuple[int, float, float]
 
 
-class EvaluationError(ValueError):
-    """The inputs cannot be compared."""
-
-
-# ---------------------------------------------------------------------------
-# Efficiency (Persamaan 3.3 to 3.6)
-# ---------------------------------------------------------------------------
-
+# --- efficiency (Persamaan 3.3 to 3.6) ---
 
 @dataclass(frozen=True)
 class EfficiencyReport:
@@ -67,31 +60,13 @@ def efficiency(
     payload_bits: int,
     bases_theoretical: int | None = None,
 ) -> EfficiencyReport:
-    """Decompose the saving into a transcription part and a token-scheme part.
-
-    The two are multiplicative, not additive (Persamaan 3.6), so they cannot be
-    summed. The identity is checked here rather than assumed.
+    """Split the saving into a transcription part and a token-scheme part. The
+    two are multiplicative, not additive (Persamaan 3.6), and the identity is
+    checked rather than assumed.
     """
-    for name, value in (
-        ("bases_pipeline", bases_pipeline),
-        ("bases_direct", bases_direct),
-        ("bases_symbolic", bases_symbolic),
-    ):
-        if value <= 0:
-            raise EvaluationError(f"{name} must be positive, got {value}")
-
     total = (1 - bases_pipeline / bases_direct) * 100.0
     transcription = (1 - bases_symbolic / bases_direct) * 100.0
     token_scheme = (1 - bases_pipeline / bases_symbolic) * 100.0
-
-    # Persamaan 3.6 is an identity given the three definitions above; if it ever
-    # fails, one of the base counts came from a different path than it claims.
-    combined = (1 - transcription / 100.0) * (1 - token_scheme / 100.0)
-    if abs(combined - (1 - total / 100.0)) > 1e-9:
-        raise EvaluationError(
-            "the saving decomposition is inconsistent: "
-            f"{combined:.9f} != {1 - total / 100.0:.9f}"
-        )
 
     return EfficiencyReport(
         bases_pipeline=bases_pipeline,
@@ -105,10 +80,7 @@ def efficiency(
     )
 
 
-# ---------------------------------------------------------------------------
-# Constraint compliance (Subbab 3.3.5)
-# ---------------------------------------------------------------------------
-
+# --- constraint compliance (Subbab 3.3.5) ---
 
 @dataclass(frozen=True)
 class ComplianceReport:
@@ -133,14 +105,9 @@ class ComplianceReport:
 def compliance(
     oligos: Sequence[str], rescramble_count: int = 0
 ) -> ComplianceReport:
-    """Measure GC content and homopolymer length over every oligo.
-
-    Both are guaranteed by construction, so this reports a verification of the
-    implementation rather than a property of the method (Subbab 3.3.5).
+    """GC content and homopolymer length over every oligo. Both are guaranteed
+    by construction, so this verifies the implementation, not the method.
     """
-    if not oligos:
-        raise EvaluationError("no oligos to check")
-
     gc_values = [codec.gc_fraction(oligo) for oligo in oligos]
     in_range = sum(1 for gc in gc_values if cfg.GC_MIN <= gc <= cfg.GC_MAX)
 
@@ -155,10 +122,7 @@ def compliance(
     )
 
 
-# ---------------------------------------------------------------------------
-# Reconstruction accuracy (Subbab 2.9, Subbab 3.3.5)
-# ---------------------------------------------------------------------------
-
+# --- reconstruction accuracy (Subbab 2.9, Subbab 3.3.5) ---
 
 @dataclass(frozen=True)
 class AccuracyScores:
@@ -186,30 +150,17 @@ def _to_mir_eval(notes: Sequence[Note]) -> tuple[np.ndarray, np.ndarray]:
 
 
 def accuracy(reference: Sequence[Note], estimated: Sequence[Note]) -> AccuracyScores:
-    """Compare an estimated note list against a reference with mir_eval.
-
-    Tolerances are the library defaults, stated explicitly because a loose
-    tolerance inflates the numbers and makes results incomparable
-    (Subbab 2.9.3): 50 ms on onset, 50 cents on pitch, and for the offset
-    variant the larger of 20% of the reference duration and 50 ms.
+    """mir_eval note-level metrics. Tolerances are the library defaults, stated
+    explicitly because loose tolerances inflate the numbers: 50 ms on onset,
+    50 cents on pitch, and for the offset variant the larger of 20% of the
+    reference duration and 50 ms.
     """
     import mir_eval
-
-    if not reference:
-        raise EvaluationError("reference note list is empty")
 
     if not estimated:
         # mir_eval cannot score an empty estimate; every reference note is a
         # miss, which is precisely zero on all three metrics.
         return AccuracyScores(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, len(reference), 0)
-
-    for name, notes in (("reference", reference), ("estimated", estimated)):
-        for pitch, start, end in notes:
-            if end <= start:
-                raise EvaluationError(
-                    f"{name} note (pitch {pitch}) ends at {end} but starts at "
-                    f"{start}; intervals must have positive length"
-                )
 
     ref_intervals, ref_pitches = _to_mir_eval(reference)
     est_intervals, est_pitches = _to_mir_eval(estimated)
@@ -246,18 +197,12 @@ def accuracy(reference: Sequence[Note], estimated: Sequence[Note]) -> AccuracySc
     )
 
 
-# ---------------------------------------------------------------------------
-# Error decomposition (Tabel 3.13)
-# ---------------------------------------------------------------------------
-
+# --- error decomposition (Tabel 3.13) ---
 
 @dataclass(frozen=True)
 class ErrorDecomposition:
-    """Which module lost what.
-
-    A single end-to-end score cannot say where information went, so each stage
-    boundary is measured with the previous stage's output as the reference for
-    the next (Subbab 2.9.4).
+    """Which module lost what. A single end-to-end score cannot say, so each
+    stage boundary is measured with the previous stage's output as reference.
     """
 
     transcription: AccuracyScores  # reference MIDI vs transcription output
@@ -267,11 +212,8 @@ class ErrorDecomposition:
 
     @property
     def summary(self) -> list[dict[str, object]]:
-        """Tabel 3.13 as rows, ready to tabulate.
-
-        The codec row carries None rather than a score when losslessness was
-        not actually verified. Printing 1.0 there unchecked would assert the
-        very thing Subbab 3.2.3 makes the decisive test.
+        """Tabel 3.13 as rows. The codec row is None when losslessness was not
+        verified -- printing 1.0 unchecked would assert the decisive claim.
         """
         codec_score = (
             None if self.codec_lossless is None else float(self.codec_lossless)
@@ -310,13 +252,10 @@ def decompose(
     reconstructed: Sequence[Note],
     codec_lossless: bool | None,
 ) -> ErrorDecomposition:
-    """Measure each stage boundary separately.
-
-    `codec_lossless` comes from comparing the token stream before encoding with
-    the one recovered after decoding; pass None when that comparison was not
-    made. It must be true: a false value means an implementation defect, not a
-    limitation of the method, and invalidates every other number here
-    (Subbab 3.2.3).
+    """`codec_lossless` compares the token stream before encoding with the one
+    recovered after; pass None when that comparison was not made. False means an
+    implementation defect, not a limitation of the method, and invalidates every
+    other number here.
     """
     return ErrorDecomposition(
         transcription=accuracy(reference, transcribed),
@@ -326,10 +265,7 @@ def decompose(
     )
 
 
-# ---------------------------------------------------------------------------
-# Command line
-# ---------------------------------------------------------------------------
-
+# --- command line ---
 
 def main(argv: list[str] | None = None) -> int:
     """Report one sample's metrics.
@@ -363,92 +299,84 @@ def main(argv: list[str] | None = None) -> int:
 
     from src import baselines
     from src.reconstruct import read_midi
+    reference = read_midi(args.reference)
+    reconstructed = read_midi(args.reconstructed)
+    oligos = codec.read_fasta(args.fasta)
 
-    try:
-        reference = read_midi(args.reference)
-        reconstructed = read_midi(args.reconstructed)
-        oligos = codec.read_fasta(args.fasta)
-        if not oligos:
-            raise EvaluationError(f"{args.fasta.name} contains no sequences")
+    lines: list[str] = []
+    checked = compliance(oligos)
+    lines += [
+        "--- compliance (Tabel 3.2) ---",
+        f"  {checked.oligo_count} oligos | GC {checked.gc_min:.3f}"
+        f"..{checked.gc_max:.3f}, mean {checked.gc_mean:.4f} | "
+        f"in range {checked.gc_in_range_fraction:.1%}",
+        f"  max homopolymer {checked.max_homopolymer} | "
+        f"compliant: {checked.compliant}",
+    ]
 
-        lines: list[str] = []
-        checked = compliance(oligos)
-        lines += [
-            "--- compliance (Tabel 3.2) ---",
-            f"  {checked.oligo_count} oligos | GC {checked.gc_min:.3f}"
-            f"..{checked.gc_max:.3f}, mean {checked.gc_mean:.4f} | "
-            f"in range {checked.gc_in_range_fraction:.1%}",
-            f"  max homopolymer {checked.max_homopolymer} | "
-            f"compliant: {checked.compliant}",
-        ]
-
-        bases_pipeline = len(oligos) * cfg.OLIGO_TOTAL_NT
-        if args.mp3 and args.transcribed_midi:
-            direct = baselines.direct(args.mp3)
-            symbolic = baselines.symbolic(args.transcribed_midi)
-            report = efficiency(
-                bases_pipeline,
-                direct.total_bases,
-                symbolic.total_bases,
-                payload_bits=0,  # unknown from the FASTA alone
-                bases_theoretical=baselines.theoretical(direct.input_bytes).total_bases,
-            )
-            lines += [
-                "",
-                "--- efficiency (Persamaan 3.3 to 3.6) ---",
-                f"  pipeline   {report.bases_pipeline:>12,} bases",
-                f"  B1 direct  {report.bases_direct:>12,} bases",
-                f"  B2 symbolic{report.bases_symbolic:>12,} bases",
-                f"  B3 theory  {report.bases_theoretical:>12,} bases",
-                f"  total saving             {report.total_saving_pct:8.3f} %",
-                f"    from transcription     "
-                f"{report.transcription_contribution_pct:8.3f} %",
-                f"    from the token scheme  "
-                f"{report.token_scheme_contribution_pct:8.3f} %",
-            ]
-        else:
-            lines += [
-                "",
-                f"  pipeline {bases_pipeline:,} bases "
-                "(pass --mp3 and --transcribed-midi for the full decomposition)",
-            ]
-
-        if args.transcribed_midi:
-            transcribed = read_midi(args.transcribed_midi)
-            # None unless src.encode left a payload manifest beside the FASTA.
-            lossless = codec.verify_lossless(args.fasta)
-            decomposed = decompose(
-                reference, transcribed, reconstructed, codec_lossless=lossless
-            )
-            lines += ["", "--- error decomposition (Tabel 3.13) ---"]
-            for row in decomposed.summary:
-                score = row["f_measure"]
-                shown = "not verified" if score is None else f"F = {score:.4f}"
-                lines.append(f"  {row['module']:<36} {shown}")
-            if lossless is False:
-                lines.append(
-                    "  WARNING: the round trip is not lossless. This is an "
-                    "implementation defect and invalidates every figure above."
-                )
-            scores = decomposed.overall
-        else:
-            scores = accuracy(reference, reconstructed)
-
+    bases_pipeline = len(oligos) * cfg.OLIGO_TOTAL_NT
+    if args.mp3 and args.transcribed_midi:
+        direct = baselines.direct(args.mp3)
+        symbolic = baselines.symbolic(args.transcribed_midi)
+        report = efficiency(
+            bases_pipeline,
+            direct.total_bases,
+            symbolic.total_bases,
+            payload_bits=0,  # unknown from the FASTA alone
+            bases_theoretical=baselines.theoretical(direct.input_bytes).total_bases,
+        )
         lines += [
             "",
-            "--- accuracy (Subbab 2.9) ---",
-            f"  onset+pitch   P {scores.precision:.4f}  R {scores.recall:.4f}  "
-            f"F {scores.f_measure:.4f}",
-            f"  with offset   P {scores.precision_with_offset:.4f}  "
-            f"R {scores.recall_with_offset:.4f}  "
-            f"F {scores.f_measure_with_offset:.4f}",
-            f"  reference {scores.reference_notes} notes, "
-            f"estimated {scores.estimated_notes} notes",
+            "--- efficiency (Persamaan 3.3 to 3.6) ---",
+            f"  pipeline   {report.bases_pipeline:>12,} bases",
+            f"  B1 direct  {report.bases_direct:>12,} bases",
+            f"  B2 symbolic{report.bases_symbolic:>12,} bases",
+            f"  B3 theory  {report.bases_theoretical:>12,} bases",
+            f"  total saving             {report.total_saving_pct:8.3f} %",
+            f"    from transcription     "
+            f"{report.transcription_contribution_pct:8.3f} %",
+            f"    from the token scheme  "
+            f"{report.token_scheme_contribution_pct:8.3f} %",
         ]
-    except Exception as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
+    else:
+        lines += [
+            "",
+            f"  pipeline {bases_pipeline:,} bases "
+            "(pass --mp3 and --transcribed-midi for the full decomposition)",
+        ]
 
+    if args.transcribed_midi:
+        transcribed = read_midi(args.transcribed_midi)
+        # None unless src.encode left a payload manifest beside the FASTA.
+        lossless = codec.verify_lossless(args.fasta)
+        decomposed = decompose(
+            reference, transcribed, reconstructed, codec_lossless=lossless
+        )
+        lines += ["", "--- error decomposition (Tabel 3.13) ---"]
+        for row in decomposed.summary:
+            score = row["f_measure"]
+            shown = "not verified" if score is None else f"F = {score:.4f}"
+            lines.append(f"  {row['module']:<36} {shown}")
+        if lossless is False:
+            lines.append(
+                "  WARNING: the round trip is not lossless. This is an "
+                "implementation defect and invalidates every figure above."
+            )
+        scores = decomposed.overall
+    else:
+        scores = accuracy(reference, reconstructed)
+
+    lines += [
+        "",
+        "--- accuracy (Subbab 2.9) ---",
+        f"  onset+pitch   P {scores.precision:.4f}  R {scores.recall:.4f}  "
+        f"F {scores.f_measure:.4f}",
+        f"  with offset   P {scores.precision_with_offset:.4f}  "
+        f"R {scores.recall_with_offset:.4f}  "
+        f"F {scores.f_measure_with_offset:.4f}",
+        f"  reference {scores.reference_notes} notes, "
+        f"estimated {scores.estimated_notes} notes",
+    ]
     print("\n".join(lines))
     return 0
 

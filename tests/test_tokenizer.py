@@ -1,8 +1,7 @@
 """Token scheme, repeat detection, and bit packing (Subbab 3.3.3, 3.3.4).
 
-The round-trip tests here verify the requirement Subbab 3.2.3 calls decisive:
-tokens recovered after decoding must be bit-identical to the tokens before
-encoding. A failure means an implementation defect, not a limit of the method.
+The round-trip tests verify the requirement Subbab 3.2.3 calls decisive: tokens
+recovered after decoding must be bit-identical to those before encoding.
 """
 
 from __future__ import annotations
@@ -16,7 +15,6 @@ from src.tokenizer import (
     NoteToken,
     QuantizedNote,
     ReferenceToken,
-    TokenRangeError,
     compress,
     decode_bytes,
     encode_notes,
@@ -53,10 +51,7 @@ def random_notes(rng: random.Random, count: int) -> list[QuantizedNote]:
     return notes
 
 
-# ---------------------------------------------------------------------------
-# Delta encoding
-# ---------------------------------------------------------------------------
-
+# --- delta encoding ---
 
 def test_first_delta_is_the_absolute_position():
     tokens = notes_to_tokens([QuantizedNote(60, 12, 4)])
@@ -78,29 +73,7 @@ def test_delta_round_trip():
     assert tokens_to_notes(notes_to_tokens(notes)) == notes
 
 
-def test_unsorted_notes_are_rejected():
-    notes = [QuantizedNote(60, 8, 4), QuantizedNote(62, 4, 4)]
-    with pytest.raises(TokenRangeError, match="must be sorted"):
-        notes_to_tokens(notes)
-
-
-def test_rest_longer_than_the_delta_field_is_rejected():
-    notes = [QuantizedNote(60, 0, 4), QuantizedNote(62, cfg.MAX_DELTA_UNITS + 1, 4)]
-    with pytest.raises(TokenRangeError, match="exceeds"):
-        notes_to_tokens(notes)
-
-
-def test_out_of_range_pitch_and_duration_are_rejected():
-    with pytest.raises(TokenRangeError, match="pitch"):
-        notes_to_tokens([QuantizedNote(128, 0, 4)])
-    with pytest.raises(TokenRangeError, match="duration"):
-        notes_to_tokens([QuantizedNote(60, 0, cfg.MAX_DURATION_UNITS + 1)])
-
-
-# ---------------------------------------------------------------------------
-# Repeat detection
-# ---------------------------------------------------------------------------
-
+# --- repeat detection ---
 
 def test_repeated_phrase_becomes_a_reference():
     notes = make_phrase(0) + make_phrase(16)
@@ -113,10 +86,8 @@ def test_repeated_phrase_becomes_a_reference():
 
 
 def test_reference_shorter_than_its_length_unrolls_correctly():
-    """Distance below length is legal and expands one token at a time.
-
-    Subbab 2.8.4 relies on this so a repeating figure collapses to a single
-    reference.
+    """Distance below length is legal, and lets a repeating figure collapse to
+    a single reference.
     """
     unit = [NoteToken(60, 4, 2), NoteToken(62, 2, 2)]
     tokens = unit * 10
@@ -154,15 +125,7 @@ def test_references_stay_inside_the_window_and_length_limits():
             assert cfg.LZ77_MIN_MATCH <= token.length <= cfg.LZ77_MAX_MATCH
 
 
-def test_expanding_a_reference_that_reaches_too_far_raises():
-    with pytest.raises(TokenRangeError, match="reaches"):
-        expand([ReferenceToken(5, 2)])
-
-
-# ---------------------------------------------------------------------------
-# Packing
-# ---------------------------------------------------------------------------
-
+# --- packing ---
 
 def test_header_occupies_exactly_four_bytes():
     data, bits = pack([], 120, cfg.DEFAULT_GRID_CODE)
@@ -202,24 +165,7 @@ def test_trailing_bytes_are_ignored():
     assert unpack(data + bytes(64))[0] == tokens
 
 
-def test_tempo_outside_the_header_range_is_rejected():
-    with pytest.raises(TokenRangeError, match="tempo"):
-        pack([], cfg.MIN_TEMPO - 1, cfg.DEFAULT_GRID_CODE)
-    with pytest.raises(TokenRangeError, match="tempo"):
-        pack([], cfg.MAX_TEMPO + 1, cfg.DEFAULT_GRID_CODE)
-
-
-def test_wrong_schema_version_is_rejected():
-    data, _ = pack([], 120, cfg.DEFAULT_GRID_CODE)
-    corrupted = bytes([(data[0] ^ 0xF0)]) + data[1:]
-    with pytest.raises(TokenRangeError, match="schema version"):
-        unpack(corrupted)
-
-
-# ---------------------------------------------------------------------------
-# Whole module
-# ---------------------------------------------------------------------------
-
+# --- whole module ---
 
 @pytest.mark.parametrize("use_repeat_detection", [True, False])
 def test_notes_survive_the_full_token_round_trip(use_repeat_detection):

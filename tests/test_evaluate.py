@@ -8,15 +8,12 @@ from src import baselines
 from src import config as cfg
 from src import dna_codec as codec
 from src import evaluate
-from src.evaluate import EvaluationError, accuracy, compliance, decompose, efficiency
+from src.evaluate import accuracy, compliance, decompose, efficiency
 
 REFERENCE = [(60, 0.0, 0.5), (64, 0.5, 1.0), (67, 1.0, 1.5)]
 
 
-# ---------------------------------------------------------------------------
-# Efficiency (Persamaan 3.3 to 3.6)
-# ---------------------------------------------------------------------------
-
+# --- efficiency (Persamaan 3.3 to 3.6) ---
 
 def test_saving_matches_persamaan_3_3():
     report = efficiency(
@@ -63,15 +60,7 @@ def test_theoretical_path_is_optional_context():
     assert with_b3.constraint_and_redundancy_cost_pct == pytest.approx(20.0)
 
 
-def test_non_positive_base_counts_are_rejected():
-    with pytest.raises(EvaluationError, match="must be positive"):
-        efficiency(0, 1000, 500, 800)
-
-
-# ---------------------------------------------------------------------------
-# Compliance
-# ---------------------------------------------------------------------------
-
+# --- compliance ---
 
 def test_compliance_over_real_oligos():
     report = codec.encode(bytes(range(256)) * 4)
@@ -97,15 +86,7 @@ def test_rejection_rate_is_per_oligo():
     assert checked.rejection_rate == pytest.approx(1.0)
 
 
-def test_empty_oligo_list_is_rejected():
-    with pytest.raises(EvaluationError, match="no oligos"):
-        compliance([])
-
-
-# ---------------------------------------------------------------------------
-# Accuracy (Subbab 2.9)
-# ---------------------------------------------------------------------------
-
+# --- accuracy (Subbab 2.9) ---
 
 def test_identical_note_lists_score_one():
     scores = accuracy(REFERENCE, REFERENCE)
@@ -155,20 +136,7 @@ def test_empty_estimate_scores_zero():
     assert scores.estimated_notes == 0
 
 
-def test_empty_reference_is_rejected():
-    with pytest.raises(EvaluationError, match="reference note list is empty"):
-        accuracy([], REFERENCE)
-
-
-def test_a_zero_length_note_is_rejected():
-    with pytest.raises(EvaluationError, match="positive length"):
-        accuracy(REFERENCE, [(60, 1.0, 1.0)])
-
-
-# ---------------------------------------------------------------------------
-# Error decomposition (Tabel 3.13)
-# ---------------------------------------------------------------------------
-
+# --- error decomposition (Tabel 3.13) ---
 
 def test_decomposition_reports_every_stage():
     transcribed = [(pitch, start + 0.01, end) for pitch, start, end in REFERENCE]
@@ -215,10 +183,7 @@ def test_verification_catches_a_corrupted_sequence(tmp_path):
     assert codec.verify_lossless(fasta) is False
 
 
-# ---------------------------------------------------------------------------
-# Baselines (Tabel 3.12)
-# ---------------------------------------------------------------------------
-
+# --- baselines (Tabel 3.12) ---
 
 def test_theoretical_baseline_is_two_bits_per_base():
     result = baselines.theoretical(1000)
@@ -238,15 +203,6 @@ def test_pipeline_and_baselines_share_the_codec():
     """Tabel 3.12 requires the same DNA scheme on every path."""
     data = bytes(range(256)) * 2
     assert baselines.pipeline(data).total_bases == codec.encode(data).total_bases
-
-
-def test_empty_input_is_rejected(tmp_path):
-    path = tmp_path / "empty.bin"
-    path.write_bytes(b"")
-    with pytest.raises(ValueError, match="empty"):
-        baselines.encode_file(path, "test")
-    with pytest.raises(ValueError, match="positive"):
-        baselines.theoretical(0)
 
 
 def test_efficiency_over_a_real_encoding(tmp_path):

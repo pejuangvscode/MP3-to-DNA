@@ -1,16 +1,3 @@
-"""Automatic music transcription with basic-pitch (Tabel 3.5, Subbab 3.3.2).
-
-The pre-trained model is used as it stands: no training, no fine-tuning, no
-change to its architecture, as the research scope requires. Output is a note
-list at the note level of Subbab 2.7.1 -- pitch, start, end -- which is exactly
-what tokenisation needs.
-
-Results are cached per audio file and parameter set. Model inference is the one
-stage of the pipeline that is not bit-reproducible, especially on GPU, so
-caching lets the deterministic stages downstream be rerun and compared against
-identical input (Tabel 3.2).
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -22,12 +9,7 @@ from typing import NamedTuple, Sequence
 from src import config as cfg
 
 
-class TranscriptionError(RuntimeError):
-    """Transcription could not be produced."""
-
-
 class TranscribedNote(NamedTuple):
-    """One note as the model reports it, in seconds."""
 
     pitch: int  # MIDI note number
     start: float
@@ -41,7 +23,6 @@ class TranscribedNote(NamedTuple):
 
 @dataclass(frozen=True)
 class TranscriptionParams:
-    """Inference parameters, recorded so results stay attributable."""
 
     onset_threshold: float = cfg.ONSET_THRESHOLD
     frame_threshold: float = cfg.FRAME_THRESHOLD
@@ -83,13 +64,7 @@ def _file_digest(path: Path) -> str:
 
 
 def _sorted_notes(raw: Sequence[tuple]) -> tuple[TranscribedNote, ...]:
-    """basic-pitch note events -> our note tuples, in a stable order.
 
-    Events arrive as (start, end, pitch, amplitude, pitch_bends). Pitch bends
-    are dropped: the token scheme stores integer MIDI note numbers, so bend
-    information has nowhere to go and would be discarded at quantisation
-    anyway.
-    """
     notes = [
         TranscribedNote(
             pitch=int(pitch),
@@ -99,8 +74,6 @@ def _sorted_notes(raw: Sequence[tuple]) -> tuple[TranscribedNote, ...]:
         )
         for start, end, pitch, amplitude, *_ in raw
     ]
-    # The model does not guarantee an order; sorting here makes every later
-    # stage reproducible.
     notes.sort(key=lambda note: (note.start, note.pitch, note.end))
     return tuple(notes)
 
@@ -110,26 +83,14 @@ def transcribe(
     params: TranscriptionParams | None = None,
     midi_path: str | Path | None = None,
 ) -> Transcription:
-    """Run basic-pitch over an audio file.
 
-    `midi_path`, when given, receives the model's own MIDI output. That file is
-    the input to comparison path B2 of Tabel 3.12, which encodes transcribed
-    MIDI without quantisation or tokenisation to separate what transcription
-    contributes from what the token scheme contributes.
-    """
     audio_path = Path(audio_path)
-    if not audio_path.is_file():
-        raise TranscriptionError(f"no such audio file: {audio_path}")
     params = params or TranscriptionParams()
 
-    # Imported here rather than at module scope: loading basic-pitch pulls in
-    # TensorFlow, which costs seconds and prints banners. Modules that only
-    # need the data types above should not pay for it.
-    try:
-        from basic_pitch import ICASSP_2022_MODEL_PATH
-        from basic_pitch.inference import predict
-    except ImportError as exc:  # pragma: no cover - environment problem
-        raise TranscriptionError(f"basic-pitch is not available: {exc}") from exc
+    # imported here, not at module scope: basic-pitch pulls in TensorFlow,
+    # which costs seconds and prints banners
+    from basic_pitch import ICASSP_2022_MODEL_PATH
+    from basic_pitch.inference import predict
 
     _, midi_data, note_events = predict(
         audio_path,
@@ -157,14 +118,8 @@ def transcribe_cached(
     params: TranscriptionParams | None = None,
     midi_path: str | Path | None = None,
 ) -> Transcription:
-    """Transcribe, reusing a stored result when the input has not changed.
 
-    The cache key covers both the audio file's contents and the inference
-    parameters, so changing either forces a fresh run.
-    """
     audio_path = Path(audio_path)
-    if not audio_path.is_file():
-        raise TranscriptionError(f"no such audio file: {audio_path}")
     params = params or TranscriptionParams()
 
     cache_dir = Path(cache_dir)
@@ -197,7 +152,6 @@ def transcribe_cached(
 
 
 def describe(transcription: Transcription) -> dict[str, float | int | str]:
-    """Per-sample transcription facts for Bab IV."""
     notes = transcription.notes
     if not notes:
         return {"file": transcription.source_path.name, "notes": 0}

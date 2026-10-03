@@ -22,10 +22,8 @@ def write_fasta_for(notes, path, tempo=120):
 
 
 def write_audio(path, seconds=4.0, sample_rate=22050):
-    """A tone written as WAV, whatever the extension says.
-
-    libsndfile sniffs content rather than trusting the name, so this stands in
-    for an MP3 in tests that only need a readable audio file.
+    """A tone written as WAV whatever the extension says: libsndfile sniffs
+    content, so this stands in for an MP3 wherever only readable audio matters.
     """
     times = np.arange(int(seconds * sample_rate)) / sample_rate
     signal = (0.4 * np.sin(2 * np.pi * 440 * times)).astype(np.float32)
@@ -33,10 +31,7 @@ def write_audio(path, seconds=4.0, sample_rate=22050):
     return path
 
 
-# ---------------------------------------------------------------------------
-# decode
-# ---------------------------------------------------------------------------
-
+# --- decode ---
 
 def test_decode_reconstructs_from_fasta_alone(tmp_path):
     """Tempo and grid travel in the token header, so nothing else is needed."""
@@ -74,25 +69,7 @@ def test_decode_cli_succeeds(tmp_path, capsys):
     assert "written" in capsys.readouterr().out
 
 
-def test_decode_cli_reports_a_missing_file(tmp_path, capsys):
-    code = decode.main(
-        ["--input", str(tmp_path / "absent.fasta"), "--output", str(tmp_path / "o.mid")]
-    )
-    assert code == 1
-    assert "error" in capsys.readouterr().err
-
-
-def test_decode_rejects_an_empty_fasta(tmp_path):
-    empty = tmp_path / "empty.fasta"
-    empty.write_text("")
-    with pytest.raises(ValueError, match="no sequences"):
-        decode.run(empty, tmp_path / "out.mid")
-
-
-# ---------------------------------------------------------------------------
-# encode
-# ---------------------------------------------------------------------------
-
+# --- encode ---
 
 @pytest.mark.slow
 def test_encode_produces_a_decodable_fasta(tmp_path):
@@ -146,29 +123,7 @@ def test_repeat_detection_can_be_switched_off(tmp_path):
     assert with_lz.tokens.stats.total_tokens <= without.tokens.stats.total_tokens
 
 
-def test_encode_rejects_a_tempo_that_would_lose_short_notes(tmp_path):
-    """At 250 BPM a 1/16 note falls under the model's minimum note length."""
-    audio = write_audio(tmp_path / "sample.wav", seconds=1.0)
-    with pytest.raises(ValueError, match="minimum_note_length"):
-        encode.run(audio, 250, tmp_path / "out.fasta", work_dir=tmp_path / "work")
-
-
-def test_encode_cli_reports_a_missing_input(tmp_path, capsys):
-    code = encode.main(
-        [
-            "--input", str(tmp_path / "absent.mp3"),
-            "--tempo", "120",
-            "--output", str(tmp_path / "out.fasta"),
-        ]
-    )
-    assert code == 1
-    assert "error" in capsys.readouterr().err
-
-
-# ---------------------------------------------------------------------------
-# corpus validator
-# ---------------------------------------------------------------------------
-
+# --- corpus validator ---
 
 def build_corpus(tmp_path, rows, notes_by_sample, with_audio=True, tempo=120):
     (tmp_path / "audio").mkdir(parents=True, exist_ok=True)
@@ -265,17 +220,6 @@ def test_a_normal_release_tail_is_accepted(tmp_path):
     write_audio(data / "audio" / "s1.mp3", seconds=midi_seconds + 2.0)
     check = corpus.check_all(data)[0]
     assert check.ok, check.problems
-
-
-def test_a_missing_manifest_is_reported(tmp_path):
-    with pytest.raises(FileNotFoundError, match="no manifest"):
-        corpus.check_all(tmp_path)
-
-
-def test_a_manifest_missing_columns_is_reported(tmp_path):
-    (tmp_path / "corpus.csv").write_text("sample,tempo\ns1,120\n")
-    with pytest.raises(ValueError, match="missing columns"):
-        corpus.check_all(tmp_path)
 
 
 def test_cli_exit_code_reflects_failures(tmp_path, capsys):

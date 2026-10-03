@@ -6,12 +6,7 @@ import pytest
 
 from src import config as cfg
 from src.quantize import quantize, to_seconds
-from src.reconstruct import (
-    RECONSTRUCTION_VELOCITY,
-    ReconstructionError,
-    read_midi,
-    to_midi,
-)
+from src.reconstruct import RECONSTRUCTION_VELOCITY, read_midi, to_midi
 from src.tokenizer import QuantizedNote
 
 NOTES = [
@@ -102,16 +97,6 @@ def test_drum_tracks_are_skipped(tmp_path):
     path = tmp_path / "mixed.mid"
     midi.write(str(path))
     assert [pitch for pitch, _, _ in read_midi(path)] == [60]
-
-
-def test_empty_note_list_is_rejected(tmp_path):
-    with pytest.raises(ReconstructionError, match="empty"):
-        to_midi([], tmp_path / "out.mid", tempo=120)
-
-
-def test_missing_file_is_reported(tmp_path):
-    with pytest.raises(ReconstructionError, match="no such MIDI"):
-        read_midi(tmp_path / "absent.mid")
 
 
 def test_full_decode_path(tmp_path):

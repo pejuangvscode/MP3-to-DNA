@@ -1,22 +1,10 @@
-"""Recovered tokens -> MIDI (Tabel 3.5).
+"""Recovered tokens -> MIDI. Grid positions become seconds again using the tempo
+from the token header, so nothing outside the sequence is needed.
 
-The last stage of the decoding path. Grid positions become seconds again using
-the tempo carried in the token header, so reconstruction needs nothing beyond
-what the DNA sequence itself supplied.
-
-Two things the token scheme does not store, and therefore cannot restore:
-
-*Velocity.* Tabel 3.8 has no field for it, so every reconstructed note gets one
-fixed value. Subbab 3.2.5 has FL Studio's humanisation vary onset *and*
-velocity, so the velocity variation is discarded here. Subbab 2.8.2 maps the
-lossy stages to transcription and quantisation; velocity is a third, lost at
-tokenisation. It changes no reported metric, since note-level evaluation
-(Subbab 2.9.1) matches on pitch and timing only.
-
-*Instrument separation.* Tokens carry no channel, so the two instruments of a
-corpus sample come back merged into one track. Again harmless for the metrics,
-which compare flat note lists, but it means the reconstructed MIDI is not a
-score.
+Two things the token scheme cannot restore. Velocity has no field in Tabel 3.8,
+so every note gets one fixed value and FL Studio's humanised velocity is lost.
+Tokens carry no channel, so a two-instrument sample comes back merged into one
+track. Neither affects note-level metrics, which match on pitch and timing.
 """
 
 from __future__ import annotations
@@ -30,23 +18,16 @@ from src import config as cfg
 from src.quantize import to_seconds
 from src.tokenizer import QuantizedNote
 
-#: Fixed velocity for every reconstructed note, mid-range in MIDI's 1..127.
+# fixed, since the token scheme stores no velocity
 RECONSTRUCTION_VELOCITY = 80
 
-#: Acoustic grand piano. Arbitrary: the token scheme stores no instrument.
+# arbitrary: the token scheme stores no instrument either
 RECONSTRUCTION_PROGRAM = 0
 
 
-class ReconstructionError(ValueError):
-    """The token stream cannot be turned into notation."""
-
-
 class MidiNote(NamedTuple):
-    """A note read from a MIDI file, in seconds.
-
-    Named fields so it drops straight into :func:`src.quantize.quantize`, which
-    reads `.pitch`, `.start` and `.end`; still a plain tuple for the evaluation
-    code, which unpacks it positionally.
+    """Named fields so it feeds quantize() directly, still a plain tuple so the
+    evaluation code can unpack it positionally.
     """
 
     pitch: int
@@ -63,9 +44,6 @@ def to_midi(
     program: int = RECONSTRUCTION_PROGRAM,
 ) -> Path:
     """Write quantised notes as a single-track MIDI file."""
-    if not notes:
-        raise ReconstructionError("nothing to reconstruct: the note list is empty")
-
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -81,21 +59,10 @@ def to_midi(
 
 
 def read_midi(path: str | Path) -> list[MidiNote]:
-    """Read a MIDI file as a flat, sorted list of (pitch, start, end) in seconds.
-
-    Instruments are merged, matching how note-level evaluation treats them
-    (Subbab 2.7.4: polyphonic transcription reports every sounding note without
-    attributing it to a source). Drum tracks are skipped, having no pitch in the
-    usual sense.
+    """Flat sorted (pitch, start, end) in seconds. Instruments are merged, as
+    note-level evaluation treats them; drum tracks are skipped.
     """
-    path = Path(path)
-    if not path.is_file():
-        raise ReconstructionError(f"no such MIDI file: {path}")
-
-    try:
-        midi = pretty_midi.PrettyMIDI(str(path))
-    except Exception as exc:
-        raise ReconstructionError(f"cannot read {path.name}: {exc}") from exc
+    midi = pretty_midi.PrettyMIDI(str(Path(path)))
 
     notes = [
         MidiNote(int(note.pitch), float(note.start), float(note.end))

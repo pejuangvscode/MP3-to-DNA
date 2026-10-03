@@ -1,24 +1,17 @@
-"""Bit-level writer and reader for token packing (Subbab 2.8.5).
-
-Token fields are not multiples of eight bits, so they are written end to end
-into one bit stream which is then cut into bytes, with only the final byte
-possibly carrying padding. Bits are written most significant first, so a field
-read back with the same width returns the value that was written.
-
-Nothing here knows about tokens; that lives in :mod:`src.tokenizer`.
+"""Bit packing (Subbab 2.8.5). Token fields are not multiples of eight bits, so
+they are written end to end and the stream is cut into bytes afterwards, with
+only the last byte padded. MSB first.
 """
 
 from __future__ import annotations
 
 
 class BitWriter:
-    """Accumulates unsigned integer fields into a bit stream.
+    """Packs unsigned integer fields into a bit stream.
 
     >>> w = BitWriter()
     >>> w.write(0b101, 3)
     >>> w.write(0b11, 2)
-    >>> w.bit_length
-    5
     >>> w.to_bytes().hex()      # 10111 padded to 10111000
     'b8'
     """
@@ -32,14 +25,6 @@ class BitWriter:
         self._total = 0
 
     def write(self, value: int, width: int) -> None:
-        """Append `value` as `width` bits, most significant bit first."""
-        if width < 0:
-            raise ValueError(f"width must not be negative, got {width}")
-        if not 0 <= value < (1 << width):
-            raise ValueError(
-                f"value {value} does not fit in {width} bits "
-                f"(allowed range 0..{(1 << width) - 1})"
-            )
         for shift in range(width - 1, -1, -1):
             self._cur = (self._cur << 1) | ((value >> shift) & 1)
             self._nbits += 1
@@ -51,23 +36,21 @@ class BitWriter:
 
     @property
     def bit_length(self) -> int:
-        """Bits written so far, excluding padding."""
+        """Bits written, excluding padding."""
         return self._total
 
     @property
     def padding_bits(self) -> int:
-        """Zero bits the final byte will be padded with."""
         return (-self._total) % 8
 
     def to_bytes(self) -> bytes:
-        """Return the stream, zero-padding the final byte if needed."""
         if self._nbits == 0:
             return bytes(self._buf)
         return bytes(self._buf) + bytes([self._cur << (8 - self._nbits)])
 
 
 class BitReader:
-    """Reads unsigned integer fields back out of a bit stream.
+    """Reads fields back out of a bit stream.
 
     >>> BitReader(bytes.fromhex("b8")).read(3)
     5
@@ -80,14 +63,6 @@ class BitReader:
         self._pos = 0  # position in bits
 
     def read(self, width: int) -> int:
-        """Read the next `width` bits as an unsigned integer."""
-        if width < 0:
-            raise ValueError(f"width must not be negative, got {width}")
-        if self._pos + width > len(self._data) * 8:
-            raise EOFError(
-                f"cannot read {width} bits: only {self.bits_remaining} left "
-                f"in a {len(self._data)}-byte stream"
-            )
         value = 0
         for _ in range(width):
             byte = self._data[self._pos >> 3]

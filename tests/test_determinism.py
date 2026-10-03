@@ -1,10 +1,8 @@
 """Repeatability of the deterministic half of the pipeline (Tabel 3.2).
 
-Everything from tokenisation onward must produce byte-identical output for
-identical input. The scrambling keystream is the one place where that could
-quietly break, so it is pinned to a stored digest as well: a change to the
-generator changes every sequence the study reports, and should have to be a
-deliberate edit rather than a side effect of a library upgrade.
+Everything from tokenisation onward must be byte-identical for identical input.
+The keystream is pinned to a stored digest as well, so a change to it has to be
+deliberate rather than a side effect of a library upgrade.
 """
 
 from __future__ import annotations

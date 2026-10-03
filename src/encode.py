@@ -1,8 +1,5 @@
-"""Encoding path: MP3 in, FASTA out.
-
-Wires the six encoding modules of Tabel 3.5 together and writes the artefacts
-Bab IV needs alongside the sequence itself: the model's own MIDI, which is the
-input to comparison path B2, and MusicXML for reading.
+"""Encoding path: MP3 in, FASTA out. Also writes the model's own MIDI, which
+feeds comparison path B2, and MusicXML for reading.
 
     python -m src.encode --input song.mp3 --tempo 120 --output song.fasta
 """
@@ -24,7 +21,7 @@ from src.transcribe import Transcription, TranscriptionParams, transcribe_cached
 
 @dataclass(frozen=True)
 class EncodeResult:
-    """Everything one encoding run produced, for reporting and for Fase 5."""
+    """Everything one encoding run produced."""
 
     fasta_path: Path
     transcribed_midi_path: Path
@@ -49,12 +46,11 @@ def run(
     cache_dir: str | Path | None = None,
     params: TranscriptionParams | None = None,
     write_musicxml: bool = True,
+    name: str | None = None,
 ) -> EncodeResult:
-    """Run the encoding path end to end.
-
-    `offset_seconds` is passed straight to quantisation and defaults to zero,
-    which is the algorithm as Subbab 3.3.4 defines it. The measured offset is
-    reported either way, so the decision to compensate stays visible.
+    """`offset_seconds` goes straight to quantisation and defaults to zero, the
+    algorithm as Subbab 3.3.4 defines it. The measured offset is reported either
+    way, so compensating stays a visible choice.
     """
     audio_path = Path(audio_path)
     output_fasta = Path(output_fasta)
@@ -64,23 +60,18 @@ def run(
     cache_dir = Path(cache_dir) if cache_dir else work_dir / "cache"
     work_dir.mkdir(parents=True, exist_ok=True)
 
-    # Fails loudly if the tempo puts one grid unit below the model's minimum
-    # note length, which would silently delete the shortest notes.
-    cfg.assert_min_note_length_fits(tempo, grid_code)
+    # `name` distinguishes the work files. The audio stem is not enough: a corpus
+    # drawn from per-track stem folders repeats names like "S01" across tracks,
+    # and every artefact would land on the one before it.
+    stem = name or audio_path.stem
 
     audio = preprocess.load(audio_path)
-    prepared = preprocess.write_wav(audio, work_dir / f"{audio_path.stem}.prepared.wav")
+    prepared = preprocess.write_wav(audio, work_dir / f"{stem}.prepared.wav")
 
-    transcribed_midi = work_dir / f"{audio_path.stem}.transcribed.mid"
+    transcribed_midi = work_dir / f"{stem}.transcribed.mid"
     transcription = transcribe_cached(
         prepared, cache_dir, params, midi_path=transcribed_midi
     )
-    if not transcription.notes:
-        raise ValueError(
-            f"{audio_path.name}: transcription found no notes; check the tempo, "
-            "the inference thresholds, and that the audio is not silent"
-        )
-
     offset = estimate_offset(transcription.notes, tempo, grid_code)
     quantised = quantize(
         transcription.notes, tempo, grid_code, offset_seconds=offset_seconds
@@ -90,10 +81,10 @@ def run(
     if write_musicxml:
         musicxml_path = notation.write_from_quantized(
             quantised.notes,
-            work_dir / f"{audio_path.stem}.musicxml",
+            work_dir / f"{stem}.musicxml",
             tempo,
             grid_code,
-            title=audio_path.stem,
+            title=stem,
         )
 
     tokens = encode_tokens(quantised, tempo, grid_code, use_repeat_detection)
@@ -122,7 +113,7 @@ def encode_tokens(
     grid_code: int,
     use_repeat_detection: bool,
 ) -> EncodedTokens:
-    """Tokenise a quantisation result. Split out so Fase 5 can rerun just this."""
+    """Tokenise a quantisation result, split out so it can be rerun alone."""
     from src.tokenizer import encode_notes
 
     return encode_notes(
@@ -200,42 +191,33 @@ def main(argv: list[str] | None = None) -> int:
         if args.offset == "auto":
             offset_seconds = None  # resolved below, after transcription
         else:
-            try:
-                offset_seconds = float(args.offset) / 1000.0
-            except ValueError:
-                parser.error("--offset must be 'none', 'auto', or a number in ms")
-
-    try:
-        if offset_seconds is None:
-            # Measure first, then rerun quantisation with the measurement.
-            probe = run(
-                args.input,
-                args.tempo,
-                args.output,
-                args.grid,
-                not args.no_repeat_detection,
-                0.0,
-                args.work_dir,
-                args.cache_dir,
-                write_musicxml=False,
-            )
-            offset_seconds = probe.offset_ms / 1000.0
-
-        result = run(
+            offset_seconds = float(args.offset) / 1000.0
+    if offset_seconds is None:
+        # Measure first, then rerun quantisation with the measurement.
+        probe = run(
             args.input,
             args.tempo,
             args.output,
             args.grid,
             not args.no_repeat_detection,
-            offset_seconds,
+            0.0,
             args.work_dir,
             args.cache_dir,
-            write_musicxml=not args.no_musicxml,
+            write_musicxml=False,
         )
-    except Exception as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
+        offset_seconds = probe.offset_ms / 1000.0
 
+    result = run(
+        args.input,
+        args.tempo,
+        args.output,
+        args.grid,
+        not args.no_repeat_detection,
+        offset_seconds,
+        args.work_dir,
+        args.cache_dir,
+        write_musicxml=not args.no_musicxml,
+    )
     print(summarise(result))
     return 0
 

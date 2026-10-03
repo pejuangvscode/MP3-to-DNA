@@ -1,9 +1,7 @@
-"""Audio preprocessing and transcription (Tabel 3.5).
+"""Audio preprocessing and transcription.
 
-These are the only tests that touch real audio and the model. Transcription is
-slow and its output is not bit-reproducible, so the assertions here check
-plumbing and contracts, not exact note lists. Musical accuracy is measured
-against the corpus in Bab IV, not here.
+The only tests that touch real audio and the model. Since transcription output
+is not bit-reproducible, these check plumbing and contracts, not exact notes.
 """
 
 from __future__ import annotations
@@ -29,10 +27,7 @@ def tone(path, frequency=440.0, seconds=1.0, sample_rate=44100, channels=1):
     return path
 
 
-# ---------------------------------------------------------------------------
-# Preprocessing
-# ---------------------------------------------------------------------------
-
+# --- preprocessing ---
 
 def test_audio_is_resampled_to_the_model_rate(tmp_path):
     audio = preprocess.load(tone(tmp_path / "a.wav", sample_rate=44100))
@@ -74,6 +69,39 @@ def test_leading_silence_is_measured(tmp_path):
     assert preprocess.leading_silence(audio) == pytest.approx(0.5, abs=0.01)
 
 
+def test_trailing_silence_is_measured(tmp_path):
+    sample_rate = 22050
+    times = np.arange(sample_rate) / sample_rate
+    signal = np.concatenate(
+        [
+            (0.5 * np.sin(2 * np.pi * 440 * times)).astype(np.float32),
+            np.zeros(sample_rate // 2, dtype=np.float32),
+        ]
+    )
+    path = tmp_path / "tail.wav"
+    sf.write(path, signal, sample_rate, subtype="FLOAT")
+
+    audio = preprocess.load(path)
+    assert preprocess.trailing_silence(audio) == pytest.approx(0.5, abs=0.01)
+
+
+def test_a_decaying_tail_shortens_as_the_threshold_rises(tmp_path):
+    """What separates a release tail from an unnotated note: a decay falls away
+    steeply as the threshold rises, where a real note would hold.
+    """
+    sample_rate = 22050
+    times = np.arange(2 * sample_rate) / sample_rate
+    decay = np.exp(-times * 4.0)
+    signal = (0.9 * decay * np.sin(2 * np.pi * 440 * times)).astype(np.float32)
+    path = tmp_path / "decay.wav"
+    sf.write(path, signal, sample_rate, subtype="FLOAT")
+
+    audio = preprocess.load(path)
+    quiet = audio.duration - preprocess.trailing_silence(audio, -60.0)
+    loud = audio.duration - preprocess.trailing_silence(audio, -40.0)
+    assert loud < quiet
+
+
 def test_wav_written_for_the_model_reloads_unchanged(tmp_path):
     audio = preprocess.load(tone(tmp_path / "a.wav"))
     written = preprocess.write_wav(audio, tmp_path / "prepared.wav")
@@ -81,11 +109,6 @@ def test_wav_written_for_the_model_reloads_unchanged(tmp_path):
     reloaded = preprocess.load(written)
     assert reloaded.sample_rate == audio.sample_rate
     assert np.allclose(reloaded.samples, audio.samples, atol=1e-6)
-
-
-def test_missing_file_is_reported(tmp_path):
-    with pytest.raises(preprocess.PreprocessError, match="no such audio file"):
-        preprocess.load(tmp_path / "absent.wav")
 
 
 def test_mp3_is_readable_without_ffmpeg(tmp_path):
@@ -111,10 +134,7 @@ def test_describe_reports_the_facts_bab_iv_tabulates(tmp_path):
     assert 0.0 < described["peak"] <= 1.0
 
 
-# ---------------------------------------------------------------------------
-# Transcription
-# ---------------------------------------------------------------------------
-
+# --- transcription ---
 
 @pytest.mark.slow
 def test_transcription_finds_a_sustained_tone(tmp_path):

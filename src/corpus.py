@@ -1,13 +1,9 @@
-"""Check the test corpus before any experiment is run (Subbab 3.2.5, Tabel 3.4).
+"""Validate the test corpus before any experiment runs (Subbab 3.2.5, Tabel 3.4).
 
-The corpus is composed by hand in FL Studio, so mistakes are easy to make and
-expensive to find later: a tempo typed wrong, an export missing, a rest longer
-than the token scheme can encode. Every one of those would surface as a strange
-result rather than as an error, halfway through Bab IV.
-
-This module checks each sample against what the pipeline can actually represent,
-and measures the repetition each one carries, so the corpus can be shown to vary
-along the dimension Tabel 3.4 calls the most important.
+The corpus is composed by hand in FL Studio, so a wrong tempo, a missing export,
+or a rest longer than the token scheme can encode is easy to introduce and would
+surface as a strange result rather than an error. Also measures how much
+repetition each sample actually carries.
 
     python -m src.corpus --data-dir data
 """
@@ -24,12 +20,16 @@ from src import config as cfg
 
 MANIFEST_COLUMNS = ("sample", "tempo", "durasi", "kerapatan", "pengulangan")
 
-#: Tabel 3.4 grades duration on its own scale, not the shared low/medium/high
-#: one the other two dimensions use.
+#: level at which sound after the last note-off counts as a note rather than a
+#: release tail. A decaying release falls away steeply across thresholds while a
+#: real note holds, so this separates the two without timing either.
+TAIL_THRESHOLD_DB = -40.0
+
+# Tabel 3.4 grades duration on its own scale, not the shared low/medium/high
 DURATION_LEVELS = ("pendek", "sedang", "panjang")
 MAGNITUDE_LEVELS = ("rendah", "sedang", "tinggi")
 
-#: (manifest column, attribute on CorpusSample, permitted levels)
+# (manifest column, attribute, permitted levels)
 DIMENSIONS = (
     ("durasi", "duration_level", DURATION_LEVELS),
     ("kerapatan", "density_level", MAGNITUDE_LEVELS),
@@ -39,7 +39,7 @@ DIMENSIONS = (
 
 @dataclass(frozen=True)
 class CorpusSample:
-    """One row of the manifest, resolved to files on disk."""
+    """One manifest row, resolved to files on disk."""
 
     name: str
     tempo: int
@@ -48,6 +48,14 @@ class CorpusSample:
     repetition_level: str
     audio_path: Path
     midi_path: Path
+    # the header carries 2 bits of grid resolution, so the grid is a per-sample
+    # property; a piece in triplets needs a different one from a piece in
+    # sixteenths, and forcing one grid on the whole corpus misaligns both
+    grid_code: int = cfg.DEFAULT_GRID_CODE
+    # which half of the corpus this belongs to; parameters are calibrated on
+    # "dev" and reported on "test", so the two must never be mixed
+    split: str = "test"
+    inst_class: str = ""
 
 
 @dataclass
@@ -61,35 +69,33 @@ class SampleCheck:
         return not self.problems
 
 
+def _find_audio(data_dir: Path, name: str) -> Path:
+    """The sample's audio, whatever container it came in.
+
+    The hand-built corpus is MP3; the Slakh corpus is FLAC. libsndfile reads
+    both, so the extension is a lookup detail rather than a format decision.
+    """
+    for suffix in (".mp3", ".flac", ".wav"):
+        candidate = data_dir / "audio" / f"{name}{suffix}"
+        if candidate.is_file():
+            return candidate
+    return data_dir / "audio" / f"{name}.mp3"
+
+
 def load_manifest(data_dir: str | Path) -> list[CorpusSample]:
-    """Read data/corpus.csv and resolve each row to its audio and MIDI files."""
+    """Read data/corpus.csv and resolve each row to its files."""
     data_dir = Path(data_dir)
     manifest = data_dir / "corpus.csv"
-    if not manifest.is_file():
-        raise FileNotFoundError(
-            f"no manifest at {manifest}. See docs/CORPUS.md for the format."
-        )
-
     samples: list[CorpusSample] = []
     with open(manifest, newline="", encoding="utf-8") as handle:
-        reader = csv.DictReader(handle)
-        missing = set(MANIFEST_COLUMNS) - set(reader.fieldnames or ())
-        if missing:
-            raise ValueError(
-                f"{manifest.name} is missing columns: {', '.join(sorted(missing))}"
-            )
+        for row in csv.DictReader(handle):
+            name = row["sample"].strip()
+            tempo = int(row["tempo"])
 
-        for line, row in enumerate(reader, start=2):
-            name = (row["sample"] or "").strip()
-            if not name:
-                raise ValueError(f"{manifest.name} line {line}: empty sample name")
-            try:
-                tempo = int(row["tempo"])
-            except (TypeError, ValueError):
-                raise ValueError(
-                    f"{manifest.name} line {line}: tempo {row['tempo']!r} "
-                    "is not an integer"
-                ) from None
+            # a prepared corpus names its files explicitly, because segments cut
+            # out of one source track do not follow the one-name-one-file rule
+            audio = (row.get("audio_path") or "").strip()
+            midi = (row.get("midi_path") or "").strip()
 
             samples.append(
                 CorpusSample(
@@ -98,24 +104,27 @@ def load_manifest(data_dir: str | Path) -> list[CorpusSample]:
                     duration_level=(row["durasi"] or "").strip().lower(),
                     density_level=(row["kerapatan"] or "").strip().lower(),
                     repetition_level=(row["pengulangan"] or "").strip().lower(),
-                    audio_path=data_dir / "audio" / f"{name}.mp3",
-                    midi_path=data_dir / "ground_truth" / f"{name}.mid",
+                    audio_path=Path(audio) if audio else _find_audio(data_dir, name),
+                    midi_path=Path(midi) if midi else data_dir / "ground_truth" / f"{name}.mid",
+                    grid_code=int(row.get("grid") or cfg.DEFAULT_GRID_CODE),
+                    split=(row.get("split") or "test").strip().lower(),
+                    inst_class=(row.get("inst_class") or "").strip(),
                 )
             )
 
-    if not samples:
-        raise ValueError(f"{manifest.name} lists no samples")
     return samples
 
 
-def check_sample(
-    sample: CorpusSample, grid_code: int = cfg.DEFAULT_GRID_CODE
-) -> SampleCheck:
-    """Verify one sample is usable, and measure what it contains."""
+def check_sample(sample: CorpusSample, grid_code: int | None = None) -> SampleCheck:
+    """Check one sample is usable and measure what it contains.
+
+    `grid_code` overrides the manifest, for sweeping one grid across the corpus.
+    """
+    grid_code = sample.grid_code if grid_code is None else grid_code
     from src import preprocess
     from src.quantize import quantize
     from src.reconstruct import read_midi
-    from src.tokenizer import TokenRangeError, compress, notes_to_tokens
+    from src.tokenizer import compress, notes_to_tokens
 
     check = SampleCheck(sample)
 
@@ -133,10 +142,12 @@ def check_sample(
         )
         return check
 
-    try:
-        cfg.assert_min_note_length_fits(sample.tempo, grid_code)
-    except ValueError as exc:
-        check.problems.append(str(exc))
+    unit_ms = cfg.grid_unit_seconds(sample.tempo, grid_code) * 1000.0
+    if cfg.MINIMUM_NOTE_LENGTH_MS >= unit_ms:
+        check.problems.append(
+            f"minimum_note_length ({cfg.MINIMUM_NOTE_LENGTH_MS:.0f} ms) is not "
+            f"shorter than one grid unit at {sample.tempo} BPM ({unit_ms:.1f} ms)"
+        )
 
     if not sample.audio_path.is_file():
         check.problems.append(f"missing audio: {sample.audio_path}")
@@ -163,22 +174,31 @@ def check_sample(
         audio = preprocess.load(sample.audio_path)
         check.facts["audio_duration_s"] = round(audio.duration, 2)
         check.facts["leading_silence_s"] = round(preprocess.leading_silence(audio), 4)
-        # The two exports must describe the same music. The test is one-sided:
-        # audio always outlasts the final note-off by the instrument's release
-        # and any reverb tail, so running longer is normal and only a large
-        # excess is suspicious. Running *shorter* means the render is missing
-        # music the reference contains.
+        # one-sided: audio normally outlasts the last note-off by the release
+        # and reverb tail, but running shorter means music is missing
         if audio.duration < midi_duration - 0.5:
             check.problems.append(
                 f"audio ends at {audio.duration:.2f} s but the reference MIDI "
                 f"runs to {midi_duration:.2f} s; the render is missing music"
             )
-        elif audio.duration > midi_duration + 5.0:
-            check.problems.append(
-                f"audio is {audio.duration:.2f} s against {midi_duration:.2f} s "
-                "of notation; the tail is longer than a release can explain, so "
-                "the two exports may come from different states of the project"
+        else:
+            # a stem that stops before the band does leaves a long but silent
+            # tail, which is fine; a note the notation does not have is not.
+            # Measured at note level rather than at the noise floor, because a
+            # sampled instrument's release decays for seconds after note-off and
+            # would otherwise read as unnotated music
+            sounding_tail = audio.duration - preprocess.trailing_silence(
+                audio, TAIL_THRESHOLD_DB
             )
+            check.facts["sounding_tail_s"] = round(
+                max(0.0, sounding_tail - midi_duration), 2
+            )
+            if sounding_tail > midi_duration + 5.0:
+                check.problems.append(
+                    f"audio still sounds at {sounding_tail:.2f} s against "
+                    f"{midi_duration:.2f} s of notation; the two exports may come "
+                    "from different states of the project"
+                )
 
     quantised = quantize(reference, sample.tempo, grid_code)
     check.facts["quantised_notes"] = len(quantised.notes)
@@ -186,9 +206,8 @@ def check_sample(
     check.facts["clamped_durations"] = quantised.clamped_count
     check.facts["rms_grid_error_ms"] = quantised.rms_grid_error_ms
 
-    # The reference is written on the piano roll, so it should sit exactly on
-    # the grid. A large error means the tempo is wrong or the piece uses
-    # figures the grid cannot express, such as triplets (Subbab 3.2.5).
+    # the reference comes off the piano roll, so it should sit on the grid; a
+    # large error means the wrong tempo or triplets
     if quantised.rms_grid_error_ms > quantised.grid_unit_ms / 4:
         check.problems.append(
             f"reference notes sit {quantised.rms_grid_error_ms:.1f} ms off a "
@@ -196,12 +215,7 @@ def check_sample(
             "piece contains no triplets"
         )
 
-    try:
-        tokens = notes_to_tokens(quantised.notes)
-    except TokenRangeError as exc:
-        check.problems.append(f"does not fit the token scheme: {exc}")
-        return check
-
+    tokens = notes_to_tokens(quantised.notes)
     compressed = compress(tokens)
     check.facts["tokens_plain"] = len(tokens)
     check.facts["tokens_compressed"] = len(compressed)
@@ -215,17 +229,31 @@ def check_sample(
             "can count"
         )
 
+    # the delta field is 8 bits and nothing clamps it, so an overlong rest wraps
+    # silently and still round-trips losslessly; the damage would surface as a
+    # lower F-measure blamed on quantisation
+    max_delta = max((token.delta for token in tokens), default=0)
+    check.facts["max_delta_units"] = max_delta
+    if max_delta > cfg.MAX_DELTA_UNITS:
+        check.problems.append(
+            f"a rest of {max_delta} grid units exceeds the {cfg.MAX_DELTA_UNITS} "
+            "an 8-bit delta can hold; it would wrap silently, so cut the sample "
+            "at its long rests"
+        )
+
+    check.facts["clamped_durations"] = quantised.clamped_count
+
     return check
 
 
 def check_all(
-    data_dir: str | Path, grid_code: int = cfg.DEFAULT_GRID_CODE
+    data_dir: str | Path, grid_code: int | None = None
 ) -> list[SampleCheck]:
     return [check_sample(sample, grid_code) for sample in load_manifest(data_dir)]
 
 
 def _coverage(checks: list[SampleCheck]) -> list[str]:
-    """Whether the corpus actually spans the three axes of Tabel 3.4."""
+    """Whether the corpus spans the three axes of Tabel 3.4."""
     lines = ["", "--- coverage (Tabel 3.4) ---"]
     for column, attribute, permitted in DIMENSIONS:
         seen = {getattr(check.sample, attribute) for check in checks}
@@ -260,23 +288,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--grid",
         type=int,
-        default=cfg.DEFAULT_GRID_CODE,
+        default=None,
         choices=sorted(cfg.GRID_SUBDIVISIONS),
+        help="override the per-sample grid recorded in the manifest",
     )
     args = parser.parse_args(argv)
 
-    try:
-        checks = check_all(args.data_dir, args.grid)
-    except Exception as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
+    checks = check_all(args.data_dir, args.grid)
 
     lines: list[str] = []
     for check in checks:
         mark = "ok  " if check.ok else "FAIL"
         sample = check.sample
         lines.append(
-            f"{mark} {sample.name:<16} {sample.tempo:3d} BPM  "
+            f"{mark} {sample.name:<22} {sample.tempo:3d} BPM  "
+            f"1/{4 * cfg.GRID_SUBDIVISIONS[args.grid or sample.grid_code]:<2d}  "
             f"{sample.duration_level}/{sample.density_level}/"
             f"{sample.repetition_level}"
         )

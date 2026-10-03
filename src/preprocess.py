@@ -1,15 +1,8 @@
-"""MP3 -> mono PCM at 22050 Hz (Tabel 3.5, Subbab 3.3.2).
+"""MP3 -> mono PCM at 22050 Hz, the rate basic-pitch resamples to internally.
 
-basic-pitch converts everything to mono and resamples to 22050 Hz internally.
-Doing it here instead makes the conversion explicit and measurable rather than
-hidden inside the model, which is what Subbab 3.3.2 asks for, and gives the
-pipeline one place to record what the decoder actually produced.
-
-The module also measures leading silence. Encoding to MP3 and decoding back
-introduces a small delay, and since the note-level onset tolerance is only
-50 ms (Subbab 2.9.3), a systematic shift of even 25 ms eats half the budget
-before transcription error is counted at all. Measuring it is the first step to
-deciding whether it needs compensating; see :mod:`src.quantize`.
+Doing it here rather than letting the model do it silently makes the conversion
+measurable, and gives one place to record leading silence: MP3 codec delay
+shifts every onset, and the note-level onset tolerance is only 50 ms.
 """
 
 from __future__ import annotations
@@ -24,13 +17,9 @@ import soundfile as sf
 from src import config as cfg
 
 
-class PreprocessError(ValueError):
-    """The audio file cannot be prepared for transcription."""
-
-
 @dataclass(frozen=True)
 class PreparedAudio:
-    """Mono audio at the model's sample rate, plus what it came from."""
+    """Mono audio at the model's sample rate, plus its provenance."""
 
     samples: np.ndarray  # float32, one dimension
     sample_rate: int
@@ -44,22 +33,9 @@ class PreparedAudio:
 
 
 def load(path: str | Path) -> PreparedAudio:
-    """Decode an audio file to mono float32 at 22050 Hz.
-
-    MP3 is read through libsndfile, which supports it from version 1.1, so no
-    external ffmpeg is involved.
-    """
+    """Decode to mono float32 at 22050 Hz. libsndfile handles MP3 directly."""
     path = Path(path)
-    if not path.is_file():
-        raise PreprocessError(f"no such audio file: {path}")
-
-    try:
-        data, sample_rate = sf.read(path, dtype="float32", always_2d=True)
-    except Exception as exc:  # libsndfile raises several unrelated types
-        raise PreprocessError(f"cannot decode {path.name}: {exc}") from exc
-
-    if data.size == 0:
-        raise PreprocessError(f"{path.name} contains no audio")
+    data, sample_rate = sf.read(path, dtype="float32", always_2d=True)
 
     channels = data.shape[1]
     # Averaging rather than taking one channel: a note panned hard to one side
@@ -81,11 +57,8 @@ def load(path: str | Path) -> PreparedAudio:
 
 
 def write_wav(audio: PreparedAudio, path: str | Path) -> Path:
-    """Write prepared audio as a 32-bit float WAV.
-
-    basic-pitch takes a file path rather than an array, so preprocessing has to
-    land on disk before transcription can read it. Float rather than 16-bit PCM
-    so this step adds no quantisation of its own.
+    """basic-pitch takes a path, not an array, so preprocessing has to land on
+    disk first. Float rather than 16-bit PCM adds no quantisation of its own.
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -94,14 +67,10 @@ def write_wav(audio: PreparedAudio, path: str | Path) -> Path:
 
 
 def leading_silence(audio: PreparedAudio, threshold_db: float = -60.0) -> float:
-    """Seconds before the first sample louder than `threshold_db`.
-
-    A diagnostic, not a correction. Reported per sample in Bab IV so any
-    systematic onset shift introduced by MP3 encoding is visible rather than
-    silently absorbed into the transcription error.
+    """Seconds before the first sample louder than `threshold_db`. Diagnostic
+    only, so an MP3-induced onset shift stays visible instead of disappearing
+    into the transcription error.
     """
-    if audio.samples.size == 0:
-        return 0.0
     threshold = 10.0 ** (threshold_db / 20.0)
     loud = np.flatnonzero(np.abs(audio.samples) >= threshold)
     if loud.size == 0:
@@ -109,8 +78,22 @@ def leading_silence(audio: PreparedAudio, threshold_db: float = -60.0) -> float:
     return float(loud[0]) / audio.sample_rate
 
 
+def trailing_silence(audio: PreparedAudio, threshold_db: float = -60.0) -> float:
+    """Seconds after the last sample louder than `threshold_db`.
+
+    Separates a long but silent tail, which is normal for a stem that stops
+    before the band does, from a tail that still carries sound and therefore
+    means the audio and the reference notation disagree.
+    """
+    threshold = 10.0 ** (threshold_db / 20.0)
+    loud = np.flatnonzero(np.abs(audio.samples) >= threshold)
+    if loud.size == 0:
+        return audio.duration
+    return audio.duration - float(loud[-1] + 1) / audio.sample_rate
+
+
 def describe(audio: PreparedAudio) -> dict[str, float | int | str]:
-    """Per-sample facts worth tabulating in Bab IV."""
+    """Per-sample facts for the results table."""
     return {
         "file": audio.source_path.name,
         "source_sample_rate": audio.source_sample_rate,

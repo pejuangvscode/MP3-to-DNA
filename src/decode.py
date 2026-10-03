@@ -1,11 +1,7 @@
-"""Decoding path: FASTA in, MIDI out.
+"""Decoding path: FASTA in, MIDI out, running the encoding stages in reverse.
 
-Runs the encoding stages in reverse: primers trimmed, bases mapped back to
-trits, trits to bits, payloads unscrambled and reordered by index,
-Reed-Solomon decoded, tokens unpacked and expanded, notation written.
-
-Nothing outside the FASTA file is needed. Tempo and grid resolution travel in
-the token header, so a sequence read back in isolation still reconstructs.
+Nothing outside the FASTA is needed: tempo and grid resolution travel in the
+token header, so a sequence found on its own still reconstructs.
 
     python -m src.decode --input song.fasta --output reconstructed.mid
 """
@@ -39,16 +35,10 @@ def run(
 ) -> DecodeResult:
     """Read a FASTA file and reconstruct notation from it."""
     fasta_path = Path(fasta_path)
-    if not fasta_path.is_file():
-        raise FileNotFoundError(f"no such FASTA file: {fasta_path}")
-
     output_midi = Path(output_midi)
     output_midi.parent.mkdir(parents=True, exist_ok=True)
 
     oligos = codec.read_fasta(fasta_path)
-    if not oligos:
-        raise ValueError(f"{fasta_path.name} contains no sequences")
-
     tokens = decode_bytes(codec.decode(oligos))
     reconstruct.to_midi(
         tokens.notes, output_midi, tokens.tempo, tokens.grid_code
@@ -98,13 +88,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", required=True, type=Path, help="MIDI file")
     parser.add_argument("--no-musicxml", action="store_true")
     args = parser.parse_args(argv)
-
-    try:
-        result = run(args.input, args.output, write_musicxml=not args.no_musicxml)
-    except Exception as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
-
+    result = run(args.input, args.output, write_musicxml=not args.no_musicxml)
     print(summarise(result))
     return 0
 

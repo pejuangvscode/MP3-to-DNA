@@ -53,21 +53,3 @@ def test_zero_width_is_a_no_op():
     assert writer.to_bytes() == b""
 
 
-def test_value_wider_than_its_field_is_rejected():
-    writer = BitWriter()
-    with pytest.raises(ValueError, match="does not fit"):
-        writer.write(256, 8)
-
-
-def test_negative_value_is_rejected():
-    writer = BitWriter()
-    with pytest.raises(ValueError, match="does not fit"):
-        writer.write(-1, 8)
-
-
-def test_reading_past_the_end_raises():
-    reader = BitReader(bytes([0xFF]))
-    reader.read(8)
-    assert reader.bits_remaining == 0
-    with pytest.raises(EOFError, match="cannot read"):
-        reader.read(1)

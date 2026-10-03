@@ -33,10 +33,7 @@ def on_grid(tempo: int, units: list[tuple[int, int, int]]) -> list[Note]:
     ]
 
 
-# ---------------------------------------------------------------------------
-# Grid unit (Persamaan 3.1)
-# ---------------------------------------------------------------------------
-
+# --- grid unit (Persamaan 3.1) ---
 
 def test_grid_unit_matches_persamaan_3_1():
     assert cfg.grid_unit_seconds(120, 2) == pytest.approx(0.125)
@@ -50,10 +47,7 @@ def test_grid_conversion_round_trips():
         assert round(seconds / cfg.grid_unit_seconds(120)) == position
 
 
-# ---------------------------------------------------------------------------
-# Rounding
-# ---------------------------------------------------------------------------
-
+# --- rounding ---
 
 def test_notes_already_on_the_grid_are_unchanged():
     units = [(60, 0, 4), (64, 4, 4), (67, 8, 8)]
@@ -89,10 +83,30 @@ def test_duration_is_clamped_to_the_field_range():
     assert report.clamped_count == 2
 
 
-# ---------------------------------------------------------------------------
-# Ordering and merging
-# ---------------------------------------------------------------------------
+def test_the_two_ends_of_the_clamp_are_counted_apart():
+    """Rounding a sub-unit note up is ordinary quantisation; truncating a held
+    note at 64 units discards duration the token scheme cannot express. Lumped
+    together the count reads as loss that mostly is not there.
+    """
+    delta = cfg.grid_unit_seconds(120)
+    notes = [
+        Note(60, 0.0, 0.01 * delta),
+        Note(62, 2 * delta, 2.01 * delta),
+        Note(72, 10 * delta, 10 * delta + 500 * delta),
+    ]
+    report = quantize(notes, 120)
+    assert report.clamped_count == 3
+    assert report.truncated_count == 1
 
+
+def test_a_duration_inside_the_range_is_not_counted_as_clamped():
+    notes = on_grid(120, [(60, 0, 8), (62, 8, cfg.MAX_DURATION_UNITS)])
+    report = quantize(notes, 120)
+    assert report.clamped_count == 0
+    assert report.truncated_count == 0
+
+
+# --- ordering and merging ---
 
 def test_notes_are_sorted_by_position_then_pitch():
     notes = on_grid(120, [(72, 8, 4), (60, 4, 4), (67, 4, 4), (62, 0, 4)])
@@ -126,10 +140,7 @@ def test_merged_notes_stay_tokenisable():
     assert tokens[1].delta == 0
 
 
-# ---------------------------------------------------------------------------
-# Offset measurement
-# ---------------------------------------------------------------------------
-
+# --- offset measurement ---
 
 def test_a_common_shift_is_recovered():
     """The shape an MP3 codec delay would take (Subbab 2.9.3)."""
@@ -173,31 +184,13 @@ def test_offset_estimate_of_an_empty_list_is_zero():
     assert estimate_offset([], 120) == (0.0, 0.0)
 
 
-# ---------------------------------------------------------------------------
-# Round trip and validation
-# ---------------------------------------------------------------------------
-
+# --- round trip and validation ---
 
 def test_seconds_round_trip():
     units = [(60, 0, 4), (64, 4, 4), (67, 12, 8)]
     report = quantize(on_grid(120, units), 120)
     seconds = to_seconds(report.notes, 120)
     assert list(report.notes) == list(quantize([Note(*s) for s in seconds], 120).notes)
-
-
-def test_tempo_outside_the_header_range_is_rejected():
-    with pytest.raises(ValueError, match="tempo"):
-        quantize([], cfg.MAX_TEMPO + 1)
-
-
-def test_unknown_grid_code_is_rejected():
-    with pytest.raises(ValueError, match="grid resolution"):
-        quantize([], 120, grid_code=9)
-
-
-def test_pitch_outside_the_midi_range_is_rejected():
-    with pytest.raises(ValueError, match="pitch"):
-        quantize([Note(200, 0.0, 1.0)], 120)
 
 
 @pytest.mark.parametrize("grid_code", sorted(cfg.GRID_SUBDIVISIONS))

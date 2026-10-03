@@ -1,9 +1,7 @@
-"""Biological constraint compliance over every oligo (Subbab 3.3.5, Tabel 3.2).
+"""Biological constraint compliance over every oligo (Tabel 3.2).
 
-Compliance is guaranteed by construction, so these tests verify that the
-implementation actually realises the guarantee rather than that the method
-works. They are the unit-level counterpart of the compliance metrics reported
-in Bab IV.
+Compliance is guaranteed by construction, so these verify that the
+implementation realises the guarantee, not that the method works.
 """
 
 from __future__ import annotations
@@ -60,12 +58,9 @@ def test_forward_junction_is_homopolymer_free():
 
 
 def test_whole_oligo_never_exceeds_a_run_of_two():
-    """Documents the one place the run of 1 cannot be guaranteed.
-
-    The payload -> reverse-primer junction can produce a run of 2 when the last
-    payload base happens to equal the first base of the fixed reverse primer.
-    Subbab 3.3.4 claims a guaranteed maximum of 1 for the whole sequence, which
-    holds everywhere except here. The <= 3 requirement is still met.
+    """The one place a run of 1 cannot be guaranteed: the payload can end on
+    the same base the fixed reverse primer starts with. Subbab 3.3.4 claims 1
+    for the whole sequence, which holds everywhere else.
     """
     observed = 0
     for data in sample_inputs():
